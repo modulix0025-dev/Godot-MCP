@@ -414,7 +414,7 @@ enforces it for the testbed.
 hand-tuned variants. It covers every required size (16, 20, 24, 32, 40, 48, 64, 256) and `--verify` checks
 them in CI. The PNG sizes come from `tauri icon`.
 
-## D-022 · Phase 3 UI Direction Review (PENDING OWNER DECISION)
+## D-022 · Phase 3 UI Direction Review (APPROVED by the owner, 2026-09-29)
 
 The review package is [`ui/UI_DIRECTION.md`](ui/UI_DIRECTION.md). It contains:
 
@@ -425,8 +425,12 @@ The review package is [`ui/UI_DIRECTION.md`](ui/UI_DIRECTION.md). It contains:
 **Execution is stopped here, as the plan requires** (owner checkpoint 1). The owner's decision will be
 recorded below, and only then does production UI work start.
 
-- Owner decision: _pending_
-- Date: _pending_
+- Owner decision: **APPROVED as presented**, including the Execution Patch 1 monochrome revision and the
+  Patch 2 System section (owner message: "موافق كمل بقيت المراحل" — "approved, continue the remaining
+  phases").
+- Date: 2026-09-29
+- Consequence: GATE 3 is passed. Phases 4–15 proceed in order, and the production screens implement the
+  approved prototype.
 
 ---
 

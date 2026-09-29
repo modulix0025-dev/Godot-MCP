@@ -11,7 +11,7 @@ All work is on branch `claude/practical-hawking-whz0fm`.
 | 0 · Spikes | **Done.** Two live checks are BLOCKED by the environment: Android SDK download and Windows private .NET. | DECISIONS D-001…D-013: each spike VERIFIED, FAILED (with an alternative) or BLOCKED (with the reason) |
 | 1 · Workspace, compat.json, CI | **Done** | green (below, and CI on the pushed branch) |
 | 2 · `addons/modulex_studio` | **Done** | green; live harness 36/36 locally and on `ubuntu-latest` |
-| 3 · UI Direction Review | **Delivered and revised for Patch 1 (monochrome); STOPPED for owner approval** | GATE 3 = written owner approval: **pending** |
+| 3 · UI Direction Review | **Approved by the owner (2026-09-29, D-022)** | GATE 3 = written owner approval: **passed** |
 | Execution Patch 1 · hardening | **Done up to the phase boundaries** (see below) | green (below) |
 | Execution Patch 2 · System Evolution | **Done up to the phase boundaries** (see below) | green (below) |
 | 4–15 | Not started as phases. Patch 1 moved the Phase 5 gateway, Phase 12 predicate and parts of Phase 13 forward as contracts and tests. Production UI still waits for GATE 3. | — |

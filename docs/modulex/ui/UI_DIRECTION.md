@@ -1,7 +1,7 @@
 # UI Direction Review: ModuleX Game Studio (Phase 3)
 
-> **Status: waiting for owner approval.** No production screens will be built until the owner approves or
-> adjusts this direction; the decision is recorded in [`../DECISIONS.md`](../DECISIONS.md) (D-022).
+> **Status: APPROVED by the owner on 2026-09-29** ([`../DECISIONS.md`](../DECISIONS.md) D-022). Production
+> screens implement this direction.
 >
 > **Revised by Execution Patch 1 (D-029).** The identity is now **monochrome**: black, white and greys only,
 > with colour reserved for semantic state. The Cobalt accent is gone. The prototype also gained the six-signal
