@@ -30,6 +30,11 @@ export { configureAgentViaServer } from './lib/configure-agent.js';
 export { EXTENSIONS_CATALOG, findExtension, hasVersion } from './utils/extensions-catalog.js';
 export type { ExtensionDescriptor, ExtensionTool } from './utils/extensions-catalog.js';
 
+// Editor discovery + the deterministic per-project port, so hosts (ModuleX Game Studio) reuse the exact same
+// resolution order and port derivation as the CLI instead of re-implementing them.
+export { findGodotBinary } from './utils/godot-editor.js';
+export { derivePortV2, MIN_PORT, MAX_PORT } from './utils/project-identity.js';
+
 export type {
   // Shared
   ProgressEvent,

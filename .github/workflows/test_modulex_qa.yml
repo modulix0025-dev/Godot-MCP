@@ -20,7 +20,7 @@ jobs:
   modulex-qa:
     name: modulex QA harness (Godot 4.5.1 mono)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       GODOT_VERSION: "4.5.1"
       TEST_PROJECT: Godot-Tests-Modulex
@@ -98,6 +98,26 @@ jobs:
               --result modulex-qa-result.json \
               --workdir modulex-qa-work
 
+      - name: Setup Node (Studio Core live gate)
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+
+      - name: GATE 4 — Studio Core against the real editor (supervisors, GodotCall, checkpoints, crash restart)
+        env:
+          MODULEX_LIVE_SERVER: ${{ steps.server.outputs.bin }}
+        run: |
+          set -euo pipefail
+          (cd cli && npm ci && npm run build)
+          (cd studio && npm ci && npm run build -w @modulex/shared)
+          export MODULEX_LIVE_GODOT="$(readlink -f "$(command -v godot)")"
+          export MODULEX_LIVE_PROJECT="$(pwd)/${TEST_PROJECT}"
+          cd studio/core
+          npx vitest run --reporter=verbose tests/live-godot.test.ts tests/foundation.test.ts 2>&1 | tee ../../gate4.log
+          # The live suite must actually have run (never a silent skip in this job).
+          grep -q "scene-create → node-create → scene-save" ../../gate4.log
+          if grep -q "not exercised" ../../gate4.log; then echo "GATE 4 was skipped" >&2; exit 1; fi
+
       - name: Upload harness evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -111,5 +131,6 @@ jobs:
             modulex-qa-work/game-screenshot.png
             import.log
             build.log
+            gate4.log
           if-no-files-found: ignore
           retention-days: 7
