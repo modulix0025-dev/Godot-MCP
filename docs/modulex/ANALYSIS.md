@@ -447,3 +447,31 @@ Build worker: macOS · Xcode 26 · Godot 4.5.1 mono · signing identity ✓ · �
 | Optional **Blender** (GPL, external process, user-installed or downloaded separately) | Mesh cleanup, UV and retopology post-processing where ComfyUI lacks it | Invoked as a separate program. |
 | The **ModuleX Agent** (Hermes-based) with MCP-client support, or an adapter | Orchestration | The owner's existing project. |
 | Code-signing certificate (Authenticode) — optional but recommended | Avoiding SmartScreen warnings on `ModuleXGameStudioSetup.exe` | Owner purchase. |
+
+---
+
+## ADDENDUM — Execution Patch 1 (2026-09-29)
+
+This addendum re-checks the analysis against the code. The earlier sections stand, with these corrections.
+
+1. **Tool exposure (G11/G19).** The analysis proposed one filtered tool list. The patch splits it into two
+   layers:
+   - Agent-safe `studio_*` tools, which are the default;
+   - raw Godot-MCP tools, reached only inside Core or in owner-confirmed Developer Mode.
+
+   This is consistent with D-010: addon-side hiding does not block calls, so the Core gateway is the
+   enforcement point.
+2. **Claude is a second client class.** The analysis assumed one agent client. Claude Desktop now connects
+   as an MCP client (Mode B) with its own token and a narrower tool subset. The Anthropic API is a provider
+   (Mode A). The ModuleX Agent stays authoritative.
+3. **Identity.** Section 4's Cobalt accent is replaced by a monochrome identity, with colour only for
+   semantic state.
+4. **New first-class data.** Asset provenance, worker trust levels, the game specification plus six
+   manifests, build profiles and the stronger completion statuses are now shared contracts. Section 3's
+   pipeline becomes the 19-stage `CREATION_PIPELINE`.
+5. **External dependencies added:**
+   - an Anthropic API key, if Mode A is used;
+   - Claude Desktop with the extension installed, if Mode B is used;
+   - the ModuleX Agent codebase.
+
+   "MarketX" in the patch was read as the ModuleX Game Studio UI (D-031).

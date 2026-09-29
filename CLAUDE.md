@@ -268,6 +268,16 @@ families. The plan and the evidence are in `docs/modulex/`: `ANALYSIS.md`, `EXEC
   - `studio/compat.json` is the single version manifest; a parity test enforces it against the pins above.
   - The Tauri shell is in `studio/app/src-tauri`, gated by workflow `modulex_studio.yml` (Linux gate plus a
     Windows NSIS installer job).
+  - Security model (Execution Patch 1, `docs/modulex/security.md`):
+    - Agents get Agent-safe `studio_*` tools only. Raw Godot-MCP tools need owner-confirmed Developer Mode,
+      and Claude Desktop never gets them.
+    - The Core Policy Gateway (`studio/core/src/gateway/`) is the only enforcement point.
+    - Tool tiers and the decision live in `studio/shared/src/policy.ts`. Add every new `studio_*` tool
+      there first.
+  - `studio/claude-desktop/` builds the Claude Desktop MCPB extension. Its manifest is generated from
+    `advertisedTools('claude-desktop')`, so never hand-edit a tool list.
+  - Icons: edit the SVG masters via `studio/branding/generate-icons.py`, then run `render-icons.py`. CI runs
+    `--verify`. The identity is monochrome: colour only for semantic state.
 
 ## Conventions
 

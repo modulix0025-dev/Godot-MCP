@@ -427,3 +427,120 @@ recorded below, and only then does production UI work start.
 
 - Owner decision: _pending_
 - Date: _pending_
+
+---
+
+# Execution Patch 1 (2026-09-29)
+
+## D-023 · Two tool layers (DECIDED, built)
+
+**Layer A** is the Agent-safe `studio_*` set: 39 declared, 18 live. It is the default for every agent.
+
+**Layer B** is the 54 raw Godot-MCP tool ids. They are reachable only:
+
+- inside Studio Core; or
+- by the ModuleX Agent in owner-confirmed **Developer Mode**, with the `raw-tools` capability.
+
+**`reflection-method-call`** needs the separate `reflection` capability, and even then it asks for approval
+on every call.
+
+**Claude Desktop** never receives Layer B.
+
+**What an agent is shown.** The tools advertised to an agent are advertised ∩ implemented, so a declared
+but unbuilt tool is never listed.
+
+**Code and tests:** `shared/src/policy.ts` (`decide`, `advertisedTools`) and
+`core/src/gateway/gateway.ts`. Tests: `shared/tests/policy.test.ts`, `core/tests/security.test.ts`.
+
+## D-024 · D-010 re-confirmed: the gateway is the only enforcement point (DECIDED)
+
+Addon-side hiding stays as noise reduction. Security never depends on it. The ModuleX Agent and Claude
+Desktop never receive the Godot-MCP URL or token. A test calls a raw tool directly through the gateway and
+proves that it is refused.
+
+## D-025 · Mode C (local Agent SDK) is not offered (DECIDED, policy)
+
+The Agent SDK overview (code.claude.com/docs/en/agent-sdk/overview) says: "Unless previously approved,
+Anthropic does not allow third party developers to offer claude.ai login or rate limits for their
+products, including agents built on the Claude Agent SDK. Please use the API key authentication methods
+described in this document instead."
+
+- A subscription-login mode is therefore not permitted.
+- An API-key Agent SDK mode would duplicate Mode A's billing. It would also bring file and shell tools that
+  work outside the Policy Gateway.
+
+**Decision.** Settings shows "Local Agent SDK: Unavailable" with the reason, and routes to Mode A.
+
+## D-026 · Claude Desktop handoff uses the documented deep link (VERIFIED from docs)
+
+The link is `claude://claude.ai/new?q=<url-encoded prompt>` (Claude Help Center, "Open Claude Desktop with
+a link", support.claude.com/en/articles/14729294). The prompt:
+
+- is pre-filled and never auto-sent;
+- is capped at 13,500 characters, under the documented limit of about 14,000;
+- trims the context before the instructions;
+- is refused if a secret is detected.
+
+Code: `core/src/claude/handoff.ts`.
+
+## D-027 · Approvals are decided only in the Studio (DECIDED)
+
+- `resolveApproval` accepts only the `owner-ui` principal.
+- `studio_approval_action` over MCP supports **withdraw** only. Approve and reject return
+  `APPROVAL_NOT_OWNER`.
+- An approval is single-use and bound to identical arguments, and it expires after 30 minutes.
+- "Always allow for this project" is an owner choice. The UI never offers it for Claude Desktop requests.
+
+## D-028 · Core port and stable credentials (DECIDED, built)
+
+- Core binds `127.0.0.1:47821` by default, which is the port the Claude Desktop extension's `core_url`
+  defaults to. If that port is taken, it falls back to a random port.
+- There is one bearer token per principal: owner UI, ModuleX Agent and Claude Desktop.
+- The owner token is per launch. The agent and pairing tokens are stable. The Tauri shell stores them in
+  **Windows Credential Manager** through the `keyring` crate's native Windows backend
+  (`app/src-tauri/src/credentials.rs`) and passes them back to Core in the child's environment.
+- On other operating systems the shell keeps no store, and the credentials are per launch.
+- Verification: `cargo check` passes for `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`, and
+  `core/tests/server.test.ts` checks that stable tokens are reused.
+
+## D-029 · Monochrome identity replaces the Cobalt direction (DECIDED by the patch; supersedes part of D-022)
+
+- **Tokens.** Pure grey ink (`#0B0C0E` … `#F5F6F7`). The primary emphasis is near-white on ink (dark) or
+  ink on white (light). The five semantic colours are unchanged and are the only hues.
+- **Icon.** Concept A is now rendered in pure greys. `render-icons.py` replaces `build-ico.py` (D-021). It:
+  - renders PNGs at 16/20/24/32/40/48/64/128/256/512/1024;
+  - pixel-hints 16 and 20 px to a four-tone palette;
+  - writes the ICO (16–256) and the Tauri icons.
+
+  `--verify` runs in CI.
+- **Screenshots.** They are recaptured: 65 images.
+- **The Phase 3 owner decision (D-022) is still pending.** It now covers the monochrome direction.
+
+## D-030 · The ModuleX Agent codebase is not accessible (BLOCKED, external)
+
+No ModuleX Agent (Hermes) repository is available to this session. The integration contract is the Studio
+MCP surface, `/mcp` as `modulex-agent` with the agent token, plus the structured errors. The agent side
+must be connected by the owner or in that repository. The UI calls it "ModuleX Agent", and the Studio does
+not duplicate it.
+
+## D-031 · "MarketX" read as the ModuleX Game Studio UI (DECIDED, interpretation)
+
+The patch mentions "MarketX" in UI contexts where every other reference is the ModuleX Game Studio app, so
+it is treated as the same product. If the owner meant a separate product, only UI copy changes.
+
+## D-032 · RELEASE must also strip the `ModulexQa` autoload (OPEN, Phase 10)
+
+`ExportRelease` removes the addon C# (`RELEASE_EXCLUSION_CSPROJ`), but `project.godot` still lists
+`autoload/ModulexQa`. A PREVIEW or RELEASE export must remove that entry, through the export preset or a
+post-export check of `project.binary`. Until this is verified, no RELEASE build is claimed clean. Details
+are in `build-profiles.md` §1.
+
+## D-033 · Claude API request shape for Opus 5.5 (DECIDED, built)
+
+- No `thinking` parameter is sent, and no on/off switch is shown: Opus 5.5 always thinks adaptively.
+- `output_config.effort` defaults to `medium`.
+- The UI offers Low/Medium/High/Max, each filtered by what the model supports. The SDK and the model also
+  accept `xhigh`; routing may use it, but it is not in the owner-facing list the patch specifies.
+- Settings are validated before the request is sent.
+- Server-side refusal fallback (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) is on by
+  default.

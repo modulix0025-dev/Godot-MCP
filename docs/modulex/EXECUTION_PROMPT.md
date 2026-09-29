@@ -683,3 +683,47 @@ Publish the prototype screenshots plus the doc, then **STOP** and ask the owner 
 - Keep `docs/modulex/PROGRESS.md` updated at the end of every phase with: what was built, gate output, deviations, and open risks.
 - If blocked by a missing external dependency (GPU worker, Android device, Mac, certificates), implement everything up to the boundary, test against mocks, and mark the live check `BLOCKED` with exact owner instructions. Then continue with the next phase.
 - Ask the owner only at the Phase 3 UI review, before spending money, or when a decision is genuinely theirs (branding, policy defaults, budgets). Decide everything else yourself and record it in `DECISIONS.md`.
+
+---
+
+## EXECUTION PATCH 1: hardening (applied 2026-09-29)
+
+This patch **amends** the plan above. It does not replace it. Where the two conflict, this section wins.
+The implementation trusts the code over the documents, and each deviation is recorded in `DECISIONS.md`
+(D-023…D-033).
+
+| Patch item | Where it lands in the phases | State |
+|---|---|---|
+| §1 Two tool layers (Agent-safe `studio_*` by default; raw Godot-MCP only inside Core or in Developer Mode, which has a toggle, visible status, confirmation and audit) | Phase 5 (gateway) moved forward | **Built:** `shared/policy.ts`, `core/gateway/`, `POST /dev-mode`, the UI pill. 18 of 39 studio tools are live; the rest are declared and advertised only once implemented. |
+| §1 `reflection-method-call`: disabled by default, elevated in Developer Mode, never silent, always logged | Phase 5 | **Built:** deny by default; with the `reflection` capability it asks on every call; audited |
+| §2 Monochrome identity | Phase 3 revision | **Built:** tokens, prototype and screenshots (D-029) |
+| §2 Module Keystone icon, 16 px-readable; PNG 16…1024; multi-resolution ICO | Phase 13 moved forward | **Built:** `branding/render-icons.py` (hinted at 16 and 20 px), `--verify` in CI |
+| §3 `asset_provenance`; unknown or non-commercial licence → BLOCKED; the Assets UI | Phases 7/8 (record writer), 12 (gate) | **Contract, verdict, manifest link, completion gate and UI built.** The writer comes in Phase 7 and the RELEASE gate in Phase 10. |
+| §4 ComfyUI worker trust (5 levels, 9-step onboarding, quarantine, owner re-enable, no public unauthenticated workers) | Phase 7 | **Contract and tests built.** The live onboarding runner comes in Phase 7. |
+| §5 GAME_SPEC plus six manifests; the 19-stage creation pipeline; no jump from request to implementation | Phases 6/12 | **Built:** schemas, cross-checks, the deterministic `deriveManifests`, `studio_game_create`. Stages after planning honestly report `PIPELINE_ENGINE_UNAVAILABLE`. |
+| §6 Build profiles DEV/QA/PREVIEW/RELEASE; iOS PREPARED, never RELEASED | Phase 10 | **Contract built.** The export presets and the autoload strip come in Phase 10 (D-032). |
+| §7 `ModuleXGameStudioSetup.exe` bootstrapper plus the Setup Assistant; optional `ModuleXGameStudioFullSetup.exe` | Phase 13 | **CI names the installer.** The component catalogue is in `setup-components.ts`. The Setup Assistant downloader and the full installer come in Phase 13. |
+| §8 Claude: Mode A (API), Mode B (Claude Desktop MCP via MCPB), Mode C (only if supported), provider cards, routing, health test, handoff, audit, tests | Phases 5/6/13 | **Modes A and B built and tested.** Mode C is **not offered** (D-025). |
+| §9 Stronger completion predicate (SUCCESS / PARTIAL_SUCCESS / BLOCKED / FAILED / NEEDS_HUMAN) | Phase 12 moved forward | **Built:** `shared/completion.ts` |
+| §45 Security tests | Phase 5 | **Built:** `core/tests/security.test.ts` and others (see `security.md` §10) |
+| Acceptance scenarios #1–5 | Phase 15 | #2, #3 and #5 are covered up to the pipeline boundary. #1 and #4 need Phases 6–10 (see `PROGRESS.md`). |
+
+**Rules added by this patch:**
+
+1. The ModuleX Agent never receives Godot-MCP credentials, raw server tokens, ComfyUI credentials, Apple
+   signing material or private worker credentials.
+2. Secrets live only in Windows Credential Manager (DPAPI). They never go into SQLite, logs, events,
+   prompts, git or project files.
+3. Claude integration uses only official surfaces: the Anthropic API, an MCPB extension and the documented
+   deep link. There is no access of any kind to Claude Desktop's internal session.
+4. Claude Desktop never gets unrestricted mutation. Destructive calls always need the owner's approval in
+   the Studio.
+5. Never expose an unauthenticated ComfyUI worker to the public internet.
+6. No request goes straight to implementation. The path is always spec → manifests → task graph → stages.
+
+**Detail documents:**
+
+- [`security.md`](security.md)
+- [`claude-integration.md`](claude-integration.md)
+- [`asset-provenance.md`](asset-provenance.md)
+- [`build-profiles.md`](build-profiles.md)
