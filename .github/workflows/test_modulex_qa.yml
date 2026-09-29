@@ -1,0 +1,115 @@
+name: Test ModuleX QA (live)
+
+# Live end-to-end gate for the ModuleX Studio addon (addons/modulex_studio/). Boots a REAL Godot 4.5.1 mono
+# editor + game against REAL gamedev-mcp-server instances in token mode and drives the project-* and game-*
+# tools exactly the way ModuleX Game Studio will (scripts/modulex_qa_harness.py). Fork-only; the upstream
+# workflows are untouched. The game leg renders (game-screenshot needs pixels), so it runs under Xvfb with
+# Mesa's software OpenGL (llvmpipe).
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: modulex-qa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  modulex-qa:
+    name: modulex QA harness (Godot 4.5.1 mono)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GODOT_VERSION: "4.5.1"
+      TEST_PROJECT: Godot-Tests-Modulex
+      # Must equal ServerVersion in addons/godot_mcp/Runtime/Connection/GodotMcpServerView.cs (studio/compat.json
+      # parity test enforces the same pin).
+      SERVER_VERSION: "9.2.9"
+      SERVER_ASSET: gamedev-mcp-server-linux-x64.zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install Xvfb + Mesa (software OpenGL for the rendering game leg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 >/dev/null
+
+      - name: Setup Godot ${{ env.GODOT_VERSION }} (mono)
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: true
+          include-templates: false
+
+      - name: Report Godot version
+        run: godot --version --headless
+
+      - name: Download + verify gamedev-mcp-server (SHA256SUMS, fail-closed)
+        id: server
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://github.com/IvanMurzak/GameDev-MCP-Server/releases/download/v${SERVER_VERSION}"
+          mkdir -p server
+          curl -fsSL -o "server/${SERVER_ASSET}" "${base}/${SERVER_ASSET}"
+          curl -fsSL -o server/SHA256SUMS "${base}/SHA256SUMS"
+          (cd server && grep " ${SERVER_ASSET}\$" SHA256SUMS | sha256sum -c -)
+          unzip -o -q "server/${SERVER_ASSET}" -d server/bin
+          bin="$(find server/bin -type f -name gamedev-mcp-server | head -n1)"
+          chmod +x "$bin"
+          echo "bin=$(pwd)/$bin" >> "$GITHUB_OUTPUT"
+
+      - name: Copy both addons into the testbed
+        run: |
+          set -euo pipefail
+          rm -rf "${TEST_PROJECT}/addons"
+          mkdir -p "${TEST_PROJECT}/addons"
+          cp -r addons/godot_mcp addons/modulex_studio "${TEST_PROJECT}/addons/"
+
+      - name: Import (materialize .godot/)
+        run: godot --headless --path "${TEST_PROJECT}" --import --quit 2>&1 | tee import.log || true
+
+      - name: Build C# (both addons + testbed into one assembly)
+        run: dotnet build "${TEST_PROJECT}/${TEST_PROJECT}.csproj" --configuration Debug 2>&1 | tee build.log
+
+      - name: Run the live harness (editor leg + rendering playtest leg)
+        env:
+          SERVER_BIN: ${{ steps.server.outputs.bin }}
+        run: |
+          set -euo pipefail
+          xvfb-run -a -s "-screen 0 1600x1000x24" \
+            python scripts/modulex_qa_harness.py \
+              --godot "$(command -v godot)" \
+              --server "${SERVER_BIN}" \
+              --project "${TEST_PROJECT}" \
+              --result modulex-qa-result.json \
+              --workdir modulex-qa-work
+
+      - name: Upload harness evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: modulex-qa-evidence
+          # Server logs (*.private.log) echo the session token and are deliberately NOT uploaded.
+          path: |
+            modulex-qa-result.json
+            modulex-qa-work/editor.log
+            modulex-qa-work/game.log
+            modulex-qa-work/game-screenshot.png
+            import.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 7

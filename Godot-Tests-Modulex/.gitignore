@@ -1,0 +1,14 @@
+# CI-only ModuleX QA testbed. Both addons are copied into addons/ at CI time
+# (.github/workflows/test_modulex_qa.yml) and are NEVER committed here.
+/addons/
+
+# Godot / .NET generated
+.godot/
+.import/
+*.import
+*.uid
+bin/
+obj/
+*.sln
+nuget.config
+.claude/

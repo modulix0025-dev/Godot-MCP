@@ -1,0 +1,34 @@
+<Project Sdk="Godot.NET.Sdk/4.5.1">
+
+  <!--
+    CI-only testbed for the ModuleX Studio addon (addons/modulex_studio/). Driven by
+    .github/workflows/test_modulex_qa.yml + scripts/modulex_qa_harness.py: an editor leg exercises the
+    project-* tools and a playtest leg boots the game with MODULEX_QA=1 (ModulexQa autoload → in-game
+    GodotMcpRuntime) and drives the game-* tools over the server's REST API.
+
+    The CI workflow copies addons/godot_mcp + addons/modulex_studio in before building. The NuGet pins
+    mirror ../Godot-MCP.csproj (keep them in lockstep; never bump here). The catalog EmbeddedResource
+    mirrors the consumer-install contract in CLAUDE.md. The SDK is pinned to the ModuleX engine pin
+    (4.5.1, studio/compat.json) so GODOT4_5_OR_GREATER (engine logger → GDScript frames in
+    runtime-errors-get) is defined.
+
+    Excluded from ../Godot-MCP.sln and removed from the addon glob in ../Godot-MCP.csproj.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ModuleX.QaTestbed</RootNamespace>
+    <AssemblyName>Godot-Tests-Modulex</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="com.IvanMurzak.ReflectorNet" Version="5.4.1" />
+    <PackageReference Include="com.IvanMurzak.McpPlugin" Version="8.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="addons/godot_mcp/extensions.catalog.json" LogicalName="Godot-MCP.extensions.catalog.json" />
+  </ItemGroup>
+
+</Project>

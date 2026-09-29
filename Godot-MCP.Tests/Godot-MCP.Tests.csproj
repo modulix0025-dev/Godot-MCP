@@ -407,6 +407,18 @@
   </ItemGroup>
 
   <!--
+    ModuleX Studio addon (addons/modulex_studio/) — the pure-managed helpers (Common/: allowlist, path rules,
+    input-event validation, dependency parsing, UI rect maths, wait/hold caps, QA env gate) are unit-tested
+    directly. The runtime QA tool family (Tool_Game) + its result models + the ModulexQaAutoload host are
+    compiled in so their [AiTool] ids/hints and the QA tool set can be pinned by reflection; their Godot-native
+    bodies are never called here (verified live by the Godot-Tests-Modulex harness instead).
+  -->
+  <ItemGroup>
+    <Compile Include="..\addons\modulex_studio\Common\*.cs" Link="ModuleX\Common\%(Filename)%(Extension)" />
+    <Compile Include="..\addons\modulex_studio\Runtime\**\*.cs" Link="ModuleX\Runtime\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
     Same shared extension catalog the addon assembly embeds (Godot-MCP.csproj), under the SAME LogicalName so the
     registry's GodotExtensionCatalog.LoadEmbedded() resolves it from THIS test assembly too. This is what lets
     GodotExtensionCatalogTests prove the embedded-resource round-trip without a Godot binary.

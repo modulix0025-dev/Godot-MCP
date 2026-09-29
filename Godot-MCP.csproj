@@ -32,10 +32,15 @@
                              and break the required `dotnet build (.NET 8)` gate (the sibling-project glob
                              trap — see conventions.md). The harness only ever compiles inside
                              Godot-Tests.csproj, driven by the Godot editor/CLI in the harness workflow.
+      - Godot-Tests-Modulex/ — the ModuleX QA testbed (same sibling-project trap as Godot-Tests/).
+      - studio/              — ModuleX Game Studio (TypeScript/Rust); guard against any stray .cs there.
+    addons/modulex_studio/ is deliberately NOT removed: it is a Godot addon and part of this build gate.
   -->
   <ItemGroup>
     <Compile Remove="Godot-MCP.Tests/**/*.cs" />
     <Compile Remove="Godot-Tests/**/*.cs" />
+    <Compile Remove="Godot-Tests-Modulex/**/*.cs" />
+    <Compile Remove="studio/**/*.cs" />
   </ItemGroup>
 
   <!--

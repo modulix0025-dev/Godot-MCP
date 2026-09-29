@@ -1,0 +1,37 @@
+; Engine configuration file.
+;
+; ModuleX QA testbed (CI only). See Godot-Tests-Modulex.csproj and
+; .github/workflows/test_modulex_qa.yml. The ModulexQa autoload is inert unless MODULEX_QA=1.
+
+config_version=5
+
+[application]
+
+config/name="ModuleX-QA-Testbed"
+run/main_scene="res://Qa/Main.tscn"
+config/features=PackedStringArray("4.5", "C#")
+
+[autoload]
+
+ModulexQa="*res://addons/modulex_studio/Runtime/Qa/ModulexQaAutoload.cs"
+
+[dotnet]
+
+project/assembly_name="Godot-Tests-Modulex"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg", "res://addons/modulex_studio/plugin.cfg")
+
+[input]
+
+move_forward={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":87,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+jump={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":32,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}

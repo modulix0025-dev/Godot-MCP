@@ -188,7 +188,17 @@ def main(argv=None) -> int:
         print(f"ERROR: runtime dir not found: {runtime_dir}", file=sys.stderr)
         return 2
 
-    files = sorted(runtime_dir.rglob("*.cs"))
+    # The ModuleX Studio addon (fork-only) ships its QA runtime + pure helpers into debug exports too:
+    # its Runtime/ and Common/ trees obey the same rule. Scanned when present, so the guard still runs
+    # unchanged on an upstream checkout without the addon.
+    scan_dirs = [runtime_dir] + [
+        d for d in (
+            repo_root / "addons" / "modulex_studio" / "Runtime",
+            repo_root / "addons" / "modulex_studio" / "Common",
+        ) if d.is_dir()
+    ]
+
+    files = sorted(f for d in scan_dirs for f in d.rglob("*.cs"))
     total_violations = 0
     total_warnings = 0
     for f in files:
@@ -206,13 +216,13 @@ def main(argv=None) -> int:
     scanned = len(files)
     if total_violations:
         print()
-        print(f"FAILED: {total_violations} runtime/editor boundary violation(s) across {scanned} Runtime/ file(s).")
+        print(f"FAILED: {total_violations} runtime/editor boundary violation(s) across {scanned} runtime file(s).")
         print("A file under addons/godot_mcp/Runtime/ referenced an editor-only Godot API in code that")
         print("ships into a game build. Move the file (or the offending member) to addons/godot_mcp/Editor/,")
         print("or guard the editor-only code with #if TOOLS so it is stripped from the export build.")
         return 1
 
-    print(f"OK: runtime/editor boundary holds ({scanned} Runtime/ file(s) scanned, 0 violations).")
+    print(f"OK: runtime/editor boundary holds ({scanned} runtime file(s) scanned in {len(scan_dirs)} dir(s), 0 violations).")
     return 0
 
 

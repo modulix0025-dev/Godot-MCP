@@ -1,0 +1,57 @@
+[gd_scene load_steps=5 format=3]
+
+; ModuleX QA testbed scene: a lit 3D scene with a "player" (group) that the harness drives through
+; game-input-action / game-wait, and a HUD whose Start/Quit buttons DELIBERATELY overlap so
+; game-ui-inspect must report the overlap.
+
+[ext_resource type="Script" path="res://Qa/player.gd" id="1_player"]
+
+[sub_resource type="StandardMaterial3D" id="Mat_player"]
+albedo_color = Color(0.3, 0.44, 1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_player"]
+material = SubResource("Mat_player")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(20, 20)
+
+[node name="Main" type="Node3D"]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.94, 0.34, 0, -0.34, 0.94, 0, 3, 6)
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7, 0.7, 0, -0.7, 0.7, 0, 5, 0)
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="Player" type="CharacterBody3D" parent="." groups=["player"]]
+script = ExtResource("1_player")
+
+[node name="Mesh" type="MeshInstance3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("BoxMesh_player")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Score" type="Label" parent="HUD"]
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 200.0
+offset_bottom = 40.0
+text = "Score: 0"
+
+[node name="Start" type="Button" parent="HUD"]
+offset_left = 10.0
+offset_top = 50.0
+offset_right = 120.0
+offset_bottom = 90.0
+text = "Start"
+
+[node name="Quit" type="Button" parent="HUD"]
+offset_left = 60.0
+offset_top = 70.0
+offset_right = 170.0
+offset_bottom = 110.0
+text = "Quit"

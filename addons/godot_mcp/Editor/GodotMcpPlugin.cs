@@ -66,6 +66,13 @@ namespace com.IvanMurzak.Godot.MCP
         static GodotMcpPlugin? Current;
 
         /// <summary>
+        /// The live editor connection, or null before boot / after teardown. Lets a sibling editor addon compiled
+        /// into the same project assembly (e.g. a policy add-on disabling a tool via
+        /// <see cref="GodotMcpConnection.SetFeatureEnabled"/>) reach the connection without owning it.
+        /// </summary>
+        internal static GodotMcpConnection? ActiveConnection => Current?._connection;
+
+        /// <summary>
         /// Constructor — the load-bearing seam for surviving a Godot "Build Project" hot-reload
         /// (godotengine/godot#51626). A C# rebuild re-instantiates this <see cref="EditorPlugin"/> script
         /// IN PLACE: the native plugin node never leaves the editor tree, so <see cref="_EnterTree"/> is NOT
