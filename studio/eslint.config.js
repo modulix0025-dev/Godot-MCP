@@ -12,6 +12,7 @@ export default tseslint.config(
       'app/src-tauri/target/**',
       'app/src-tauri/gen/**',
       'spikes/**',
+      'claude-desktop/bundle/**',
     ],
   },
   js.configs.recommended,
