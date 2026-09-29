@@ -18,6 +18,10 @@ pub struct Handshake {
     pub version: String,
     pub port: u16,
     pub token: String,
+    #[serde(rename = "agentToken", default)]
+    pub agent_token: String,
+    #[serde(rename = "claudeDesktopToken", default)]
+    pub claude_desktop_token: String,
     pub pid: u32,
 }
 
@@ -41,9 +45,10 @@ pub fn node_path(exe_dir: &Path) -> PathBuf {
     exe_dir.join(name)
 }
 
-pub fn spawn(node: &Path, core_script: &Path, timeout: Duration) -> Result<Sidecar, String> {
+pub fn spawn(node: &Path, core_script: &Path, timeout: Duration, env: &[(&str, String)]) -> Result<Sidecar, String> {
     let started = Instant::now();
     let mut cmd = Command::new(node);
+    cmd.envs(env.iter().map(|(k, v)| (*k, v.as_str())));
     cmd.arg(core_script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

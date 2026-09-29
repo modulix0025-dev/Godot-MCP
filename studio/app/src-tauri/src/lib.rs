@@ -3,6 +3,7 @@
 // ModuleX Game Studio desktop shell (Tauri 2). Responsibilities in Phase 1: single instance, start the
 // bundled Studio Core sidecar and keep it alive for the window's lifetime, and a `--selftest <out.json>`
 // mode that measures cold start and memory without showing a window (Phase 0 spike 7, run in Windows CI).
+mod credentials;
 mod sidecar;
 
 use serde::Serialize;
@@ -77,7 +78,7 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
         sidecar_rss_bytes: 0,
         platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
     };
-    match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT) {
+    match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT, &[]) {
         Ok(sc) => {
             report.shell_to_handshake_ms = started.elapsed().as_millis();
             report.sidecar_handshake_ms = sc.handshake_ms;
@@ -135,8 +136,20 @@ pub fn run() {
                 .map(|d| d.join("core").join("modulex-core.mjs"))
                 .map_err(|e| e.to_string())?;
             let node = sidecar::node_path(&exe_dir());
-            match sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT) {
+            // Stable credentials from Windows Credential Manager; Core generates them on the first launch.
+            let env = credentials::core_env();
+            match sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &env) {
                 Ok(sc) => {
+                    for (name, value) in [
+                        (credentials::AGENT_TOKEN, &sc.handshake.agent_token),
+                        (credentials::CLAUDE_DESKTOP_TOKEN, &sc.handshake.claude_desktop_token),
+                    ] {
+                        if !value.is_empty() && credentials::get(name).as_deref() != Some(value.as_str()) {
+                            if let Err(e) = credentials::set(name, value) {
+                                eprintln!("[modulex] {e}");
+                            }
+                        }
+                    }
                     *app.state::<CoreState>().0.lock().unwrap() = Some(sc);
                 }
                 Err(e) => eprintln!("[modulex] {e}"),
