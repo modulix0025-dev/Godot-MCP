@@ -36,6 +36,42 @@ fn core_connection(state: State<'_, CoreState>) -> Result<CoreInfo, String> {
     })
 }
 
+/// Bundled components (the full installer ships Godot 4.5.1 .NET and the MCP server under `engine/`; both installers
+/// ship the addon sources under `addons/`). Every variable is set only when the file really exists, so the small
+/// installer still reports the pipeline as unavailable until the Setup Assistant installs Godot.
+fn bundled_env(resources: &std::path::Path, home: Option<PathBuf>) -> Vec<(&'static str, String)> {
+    let mut env = Vec::new();
+    let engine = resources.join("engine");
+    let godot = engine.join("godot");
+    if let Ok(entries) = std::fs::read_dir(&godot) {
+        let exe = entries.filter_map(|e| e.ok().map(|e| e.path())).find(|p| {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            name.starts_with("Godot_v") && name.ends_with("_win64.exe")
+        });
+        if let Some(exe) = exe {
+            env.push(("MODULEX_GODOT", exe.to_string_lossy().into_owned()));
+        }
+    }
+    let server = engine.join("server").join("gamedev-mcp-server.exe");
+    if server.is_file() {
+        env.push(("MODULEX_SERVER", server.to_string_lossy().into_owned()));
+    }
+    let addons = resources.join("addons");
+    if addons.join("godot_mcp").is_dir() && addons.join("modulex_studio").is_dir() {
+        env.push((
+            "MODULEX_ADDONS_SOURCE",
+            addons.to_string_lossy().into_owned(),
+        ));
+    }
+    if let Some(home) = home {
+        env.push((
+            "MODULEX_PROJECTS_ROOT",
+            home.join("ModuleX Games").to_string_lossy().into_owned(),
+        ));
+    }
+    env
+}
+
 fn exe_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
@@ -85,7 +121,8 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
             match sidecar::core_get(&sc.handshake, "/health") {
                 Ok((status, body)) => {
                     report.health_status = status;
-                    report.health_body = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+                    report.health_body =
+                        serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
                 }
                 Err(e) => report.error = Some(format!("health: {e}")),
             }
@@ -112,12 +149,21 @@ pub fn run() {
     let started = Instant::now();
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--selftest") {
-        let out = args.get(i + 1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("modulex-selftest.json"));
+        let out = args
+            .get(i + 1)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("modulex-selftest.json"));
         // Resources sit beside the exe in a Windows install (`resources/` folder layout differs per OS).
-        let script = [exe_dir().join("core").join("modulex-core.mjs"), exe_dir().join("resources").join("core").join("modulex-core.mjs")]
-            .into_iter()
-            .find(|p| p.exists())
-            .unwrap_or_else(|| exe_dir().join("core").join("modulex-core.mjs"));
+        let script = [
+            exe_dir().join("core").join("modulex-core.mjs"),
+            exe_dir()
+                .join("resources")
+                .join("core")
+                .join("modulex-core.mjs"),
+        ]
+        .into_iter()
+        .find(|p| p.exists())
+        .unwrap_or_else(|| exe_dir().join("core").join("modulex-core.mjs"));
         std::process::exit(self_test(script, out, started));
     }
 
@@ -143,6 +189,9 @@ pub fn run() {
             if let Ok(dir) = app.path().app_local_data_dir() {
                 env.push(("MODULEX_DATA_DIR", dir.to_string_lossy().into_owned()));
             }
+            if let Ok(res) = app.path().resource_dir() {
+                env.extend(bundled_env(&res, app.path().home_dir().ok()));
+            }
             // Safe Mode (Execution Patch 2 §21): if Core does not come up, start it once more with every non-core
             // extension disabled and the last known-good configuration, so the owner can roll back or repair.
             let spawned = sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &env).or_else(|e| {
@@ -155,9 +204,14 @@ pub fn run() {
                 Ok(sc) => {
                     for (name, value) in [
                         (credentials::AGENT_TOKEN, &sc.handshake.agent_token),
-                        (credentials::CLAUDE_DESKTOP_TOKEN, &sc.handshake.claude_desktop_token),
+                        (
+                            credentials::CLAUDE_DESKTOP_TOKEN,
+                            &sc.handshake.claude_desktop_token,
+                        ),
                     ] {
-                        if !value.is_empty() && credentials::get(name).as_deref() != Some(value.as_str()) {
+                        if !value.is_empty()
+                            && credentials::get(name).as_deref() != Some(value.as_str())
+                        {
                             if let Err(e) = credentials::set(name, value) {
                                 eprintln!("[modulex] {e}");
                             }

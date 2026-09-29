@@ -205,7 +205,9 @@ describe('job system', () => {
 
   it('a hung job times out, is cancelled on the worker, and retried within the policy', async () => {
     const { mock, jobs } = await setup({ hang: true });
-    const r = await jobs.run(req(verified(mesh)));
+    const quick = verified(mesh);
+    // A short timeout keeps the number of (real HTTP) polls small; the clock itself is virtual.
+    const r = await jobs.run(req({ ...quick, definition: { ...quick.definition, timeout_s: 20 } }));
     expect(r).toMatchObject({ status: 'FAILED', failure_class: 'timeout', attempts: 2 });
     expect(mock.cancelled).toEqual(mock.accepted);
     expect(mock.accepted).toHaveLength(2);

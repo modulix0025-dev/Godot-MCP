@@ -34,9 +34,16 @@
     "shortDescription": "Describe a game. ModuleX builds it.",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico", "icons/icon.png"],
     "externalBin": ["binaries/node"],
-    "resources": { "../../core/dist/modulex-core.mjs": "core/modulex-core.mjs" },
+    "resources": {
+      "../../core/dist/modulex-core.mjs": "core/modulex-core.mjs",
+      "../../../addons/godot_mcp/": "addons/godot_mcp/",
+      "../../../addons/modulex_studio/": "addons/modulex_studio/",
+      "../../workflows/": "workflows/"
+    },
     "windows": {
-      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
       "nsis": {
         "installMode": "currentUser",
         "displayLanguageSelector": false,

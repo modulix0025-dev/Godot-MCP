@@ -1,0 +1,11 @@
+{
+  "bundle": {
+    "resources": {
+      "../../core/dist/modulex-core.mjs": "core/modulex-core.mjs",
+      "../../../addons/godot_mcp/": "addons/godot_mcp/",
+      "../../../addons/modulex_studio/": "addons/modulex_studio/",
+      "../../workflows/": "workflows/",
+      "engine/": "engine/"
+    }
+  }
+}

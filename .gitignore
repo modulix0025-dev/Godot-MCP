@@ -475,6 +475,7 @@ studio/**/dist/
 studio/app/src-tauri/target/
 studio/app/src-tauri/gen/
 studio/app/src-tauri/binaries/
+studio/app/src-tauri/engine/
 studio/**/coverage/
 
 # Claude Desktop extension build output
