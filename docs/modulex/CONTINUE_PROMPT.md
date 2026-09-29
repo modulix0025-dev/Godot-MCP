@@ -36,7 +36,28 @@ You are continuing **ModuleX Game Studio** in the repository `modulix0025-dev/Go
     sample game.
   - GATE 7 against the mock ComfyUI. The live part is BLOCKED because no GPU worker exists (D-045).
   - GATE 8: GLB validation and import into a real editor, with the thumbnail rendered under Xvfb.
-- **Phases 9–10, in progress** (the last commit, "QA runner, fix loop and build smoke tests"):
+- **Windows installers are built by CI** (`.github/workflows/modulex_studio.yml`, the `windows` job; last green run
+  on commit `29ec04b`):
+  - `ModuleXGameStudioSetup.exe` (about 26 MB): the small bootstrapper. CI installs it silently, runs the self-test
+    and uninstalls it.
+  - `ModuleXGameStudioFullSetup.exe` (about 135 MB, artifact `modulex-studio-windows-full`). It bundles
+    Godot_v4.5.1-stable_mono_win64 (checked against SHA512-SUMS) and gamedev-mcp-server 9.2.9 win-x64 (checked
+    against SHA256SUMS) under `engine/`. The build fails if the file is under 100 MB. Config:
+    `studio/app/src-tauri/tauri.full.conf.json`.
+  - Both installers ship `addons/` and `workflows/`. The Rust shell (`src-tauri/src/lib.rs`, `bundled_env`) passes
+    `MODULEX_GODOT`, `MODULEX_SERVER`, `MODULEX_ADDONS_SOURCE` and `MODULEX_PROJECTS_ROOT` (`~/ModuleX Games`) to
+    Core, and only for files that exist. With the full installer, `studio_game_create` runs the pipeline out of the
+    box.
+  - **Not verified yet:**
+    - The full installer has never been installed and run. Add a CI step that installs it silently and runs the
+      self-test, and that checks Core reports the pipeline as available (`MODULEX_GODOT` resolved).
+    - `MODULEX_SERVER` is passed by the shell, but `studio/core/src/main.ts` does not read it yet. Wire it into the
+      playtest/QA tier.
+    - The end user still needs .NET SDK 8. Export templates are not bundled either. The Setup Assistant (Phase 13)
+      must install both, resumable and checksum-verified.
+    - The installers are unsigned, so SmartScreen warns. Code signing is Phase 13 and needs the owner's certificate
+      through the credential store; never commit it.
+- **Phases 9–10, in progress** (commit "QA runner, fix loop and build smoke tests"):
   - `studio/core/src/qa/*` holds failures and fingerprints, scenarios, the playtest runner, the QA runner, the fix
     loop and the generator-restore fixer. Unit tests pass (`tests/qa.test.ts`).
   - `tests/live-qa.test.ts` (GATE 9) is **NOT passing yet**. 7 of the 8 default scenarios pass on the clean game.
@@ -65,7 +86,8 @@ You are continuing **ModuleX Game Studio** in the repository `modulix0025-dev/Go
     monochrome: no Godot logo, and colour only for semantic state.
   - The Setup Assistant (resumable, checksum-verified downloads for Godot 4.5.1 mono, .NET, templates, the server
     and the Android tools).
-  - The NSIS installer `ModuleXGameStudioSetup.exe` and an optional full installer.
+  - The installers exist (see above). Still to do: verify the full installer end to end, add code signing, and make
+    the Setup Assistant fill in what the full installer does not bundle (.NET SDK 8, export templates, Android tools).
   - The updater (never automatic; Stable is the default channel).
   - Secrets only in Windows Credential Manager (DPAPI).
 - **Phase 14:** the self-test, the documentation and licence compliance (list every third-party licence, including
