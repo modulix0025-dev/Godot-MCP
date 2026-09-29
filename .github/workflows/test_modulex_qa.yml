@@ -119,6 +119,18 @@ jobs:
           # The "not exercised" placeholder is listed as skipped (↓) when the live suite runs; fail only if it PASSED.
           if grep -E "✓.*not exercised" ../../gate4.log; then echo "GATE 4 was skipped" >&2; exit 1; fi
 
+      - name: GATE 8 — import a generated GLB into the real editor (windowed under Xvfb, thumbnail rendered)
+        env:
+          MODULEX_LIVE_SERVER: ${{ steps.server.outputs.bin }}
+        run: |
+          set -euo pipefail
+          export MODULEX_LIVE_GODOT="$(readlink -f "$(command -v godot)")"
+          export MODULEX_LIVE_PROJECT="$(pwd)/${TEST_PROJECT}"
+          cd studio/core
+          xvfb-run -a -s "-screen 0 1600x1000x24" npx vitest run --reporter=verbose tests/live-import.test.ts tests/assets.test.ts 2>&1 | tee ../../gate8.log
+          grep -q "live import: exercised" ../../gate8.log
+          grep -q "luminance variance" ../../gate8.log
+
       - name: Upload harness evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -133,6 +145,7 @@ jobs:
             import.log
             build.log
             gate4.log
+            gate8.log
           if-no-files-found: ignore
           retention-days: 7
 

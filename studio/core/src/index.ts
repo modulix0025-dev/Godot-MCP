@@ -35,3 +35,7 @@ export * from './comfy/client.js';
 export * from './comfy/jobs.js';
 export * from './comfy/registry.js';
 export * from './comfy/onboarding.js';
+export * from './assets/validate.js';
+export * from './assets/process.js';
+export * from './assets/stages.js';
+export * from './assets/godot-import.js';

@@ -14,9 +14,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@modulex/shared": "*",
-    "godot-cli": "file:../../cli"
+    "gltf-validator": "^2.0.0-dev.3.10",
+    "godot-cli": "file:../../cli",
+    "meshoptimizer": "^1.3.0"
   },
   "bin": {
     "modulex-core": "dist/modulex-core.mjs"

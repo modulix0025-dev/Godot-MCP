@@ -18,7 +18,8 @@ All work is on branch `claude/practical-hawking-whz0fm`.
 | 5–6 · Gateway + pipeline engine | **Done.** Playtest, visual and optimization stages report PARTIAL_SUCCESS until Phase 9. | GATE 6 live: spec → exported builds (locally and in CI job `studio-pipeline`) |
 | 10 · Template + Build Service | **Windows, iOS-prep and Android-BLOCKED paths done.** Smoke on a Windows host is still open. | same GATE 6 run |
 | 7 · ComfyUI workers + jobs | **Done against the mock.** The live worker test is BLOCKED: no GPU worker (D-045). | GATE 7 mock suite 18/18; the live test reports BLOCKED |
-| 8–9, 11–15 | Not started. | — |
+| 8 · Asset factory + Godot import | **Done** (D-046) | GATE 8: 14 fixture tests; live import into a real editor (a thumbnail under Xvfb) |
+| 9, 11–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -310,6 +311,17 @@ CI job `studio-pipeline` runs the same gate. It uploads the Windows RELEASE buil
 - **Reference proxy.** `worker/comfy-proxy/Caddyfile`: TLS, a bearer token, and ComfyUI-Manager and the user-data routes closed.
 - **Workflow registry.** `studio/workflows/` holds 2 built-in workflows, both UNVERIFIED (D-045), and cross-checks each definition against its graph.
 - **GATE 7.** The mock suite passes 18/18. The live test prints `live: BLOCKED — no ComfyUI worker configured`.
+
+## Phase 8: asset validation, processing and Godot import
+
+- The validator, processing, the stage machine and the importer are described in D-046.
+- Live evidence (Godot 4.5.1 mono under Xvfb):
+  ```
+  container, khronos_validator (0 errors), mesh, finite, surface, triangle_budget, scale: ok
+  checkpoint mx-cp-1 → copy res://assets/generated/prop/crate/crate.glb → reimport → resource_find (1.1s)
+  → validate_resources → instance → scene_tree: MeshInstance3D → thumbnail: 2859-byte PNG, variance 6080.8
+  ```
+- CI runs the same test in the QA workflow (step "GATE 8").
 
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 

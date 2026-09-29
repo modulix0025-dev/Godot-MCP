@@ -702,3 +702,42 @@ A workflow becomes VERIFIED only after a real generation passes validation. The 
 
 The Hunyuan3D-2 licence is recorded as `conditional`: not licensed in the EU, UK or South Korea, and a separate
 licence is needed above 1M MAU.
+
+## D-046 · GLB validation, processing and Godot import (DECIDED, built)
+
+**Validator.** `core/src/assets/validate.ts` runs the Khronos glTF-Validator (Apache-2.0) and glTF-Transform
+(MIT). Every check writes an evidence row. Checks: container, size, Khronos errors, mesh, finite positions,
+surface area and degenerate ratio, triangle budget, scale, and the rig checks.
+
+**Processing.** `process.ts` uses gltf-transform and meshoptimizer (MIT). It does:
+
+- weld, dedup and prune;
+- simplify to the category budget;
+- normalise the scale, then ground and centre the model.
+
+Texture resizing, UV unwrap, rigging and animation report `skipped` or `blocked`. They are never faked.
+
+**Stage machine.** An unrigged character that needs a rig ends BLOCKED with "requires rigging".
+
+**Importer.** `godot-import.ts` re-validates the exact bytes before copying them. A failure after the copy
+restores the pre-import checkpoint.
+
+Deviations:
+
+- **Scratch clean-up.** `node-delete` is a destructive-tier tool, so a clean-up would need an owner approval.
+  The importer instead uses a per-import scratch scene in the git-ignored `res://.modulex/scratch/` and
+  reopens the previous scene.
+- **Asynchronous import.** A windowed editor scans and imports asynchronously, so `resource-find` is polled
+  (bounded to 60 s, with a rescan every 10 s).
+- **Blank thumbnails.** These are detected by decoding the PNG and measuring luminance variance. The live crate
+  render measured 6080.8; a flat image measures 0.
+- **Over-budget fixture.** It has 24,200 triangles, over the 20,000 prop budget, instead of 5M. The code path is
+  the same, and it keeps the fixture small.
+
+**GATE 8.**
+
+- 14 fixture tests pass.
+- Live against a real editor:
+  - Headless: PARTIAL_SUCCESS, because the thumbnail cannot render without a GPU. This is stated, not hidden.
+  - Windowed under Xvfb: SUCCESS, with the thumbnail and a MeshInstance3D.
+- A malformed GLB never reaches `res://`, and no editor call is made for it.
