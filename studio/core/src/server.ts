@@ -24,6 +24,7 @@ import { StudioStore } from './store/studio-store.js';
 import { Gateway } from './gateway/gateway.js';
 import { createHandlers } from './gateway/tool-handlers.js';
 import { createStudioMcpServer } from './mcp/studio-mcp.js';
+import { createPipelineEngine, type PipelineHostConfig } from './pipeline/engine.js';
 
 /** Proves the bundled sidecar carries the reused godot-cli library (Phase 0 spike 7). */
 const GODOT_CLI_EXPORTS = Object.keys(godotCli)
@@ -52,6 +53,8 @@ export interface CoreOptions {
   source?: SourceWorkspace;
   workflowTester?: WorkflowTester;
   forceSafeMode?: boolean;
+  /** Godot + project locations; when set, studio_game_create executes the pipeline (Phase 6). */
+  pipeline?: PipelineHostConfig;
 }
 
 export interface CoreServer {
@@ -113,7 +116,8 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
         forceSafeMode: opts.forceSafeMode,
       })
     : null;
-  const gateway = new Gateway({ audit, store, handlers, system });
+  const pipeline = opts.pipeline ? createPipelineEngine(opts.pipeline, { store, audit }) : null;
+  const gateway = new Gateway({ audit, store, handlers, system, pipeline });
   const startedAt = Date.now();
   let port = 0;
 

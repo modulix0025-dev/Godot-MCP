@@ -16,6 +16,10 @@
 //   MODULEX_SOURCE_REPO             a git checkout of the Studio source whose checked-out branch is the
 //                                   production branch for core evolutions (developer installs). Unset → core
 //                                   evolutions report BLOCKED; config and extension evolutions still work.
+//   MODULEX_GODOT                   verified Godot 4.5.1 .NET binary (Setup Assistant). With MODULEX_PROJECTS_ROOT
+//   MODULEX_PROJECTS_ROOT           and MODULEX_ADDONS_SOURCE it enables the pipeline engine; unset → games are
+//   MODULEX_ADDONS_SOURCE           planned only (PIPELINE_ENGINE_UNAVAILABLE).
+//   MODULEX_ANDROID_SDK             Android SDK root; unset → Android builds report BLOCKED.
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { startCore, type CoreOptions } from './server.js';
@@ -47,6 +51,15 @@ const options: CoreOptions = {
   dataDir: dataDir || undefined,
   source: sourceWorkspace(env.MODULEX_SOURCE_REPO || undefined),
   forceSafeMode: env.MODULEX_SAFE_MODE === '1',
+  pipeline:
+    env.MODULEX_GODOT && env.MODULEX_PROJECTS_ROOT && env.MODULEX_ADDONS_SOURCE
+      ? {
+          godot: env.MODULEX_GODOT,
+          projectsRoot: env.MODULEX_PROJECTS_ROOT,
+          addonsSource: env.MODULEX_ADDONS_SOURCE,
+          androidSdk: env.MODULEX_ANDROID_SDK || null,
+        }
+      : undefined,
 };
 const core = await startCore(options).catch((e: NodeJS.ErrnoException) => {
   if (e.code !== 'EADDRINUSE') throw e;

@@ -43,6 +43,9 @@ export const AUDIT_EVENTS = [
   // pipeline
   'game_spec_created',
   'pipeline_run_created',
+  'pipeline_stage_completed',
+  'pipeline_resumed',
+  'build_completed',
   // System Evolution (Execution Patch 2 §17, §20, §22, §28)
   'config_change_proposed',
   'config_changed',

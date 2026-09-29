@@ -26,3 +26,8 @@ export * from './godot/godot-call.js';
 export * from './godot/godot-session.js';
 export * from './checkpoints/project-checkpoints.js';
 export * from './setup/downloader.js';
+export * from './project/game-generator.js';
+export * from './project/project-factory.js';
+export * from './qa/scene-runner.js';
+export * from './build/build-service.js';
+export * from './pipeline/engine.js';

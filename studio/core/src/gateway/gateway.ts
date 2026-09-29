@@ -21,6 +21,7 @@ import type { AuditLog } from '../audit/audit-log.js';
 import type { StudioStore } from '../store/studio-store.js';
 import type { ToolHandler } from './tool-handlers.js';
 import type { SystemServices } from '../evolution/system.js';
+import type { PipelineEngine } from '../pipeline/engine.js';
 
 /** What the owner sees for an approval (Execution Patch 1 §48: What / Why / Scope / Files / Risk / Rollback). */
 export interface ApprovalImpact {
@@ -65,6 +66,8 @@ export interface GatewayOptions {
   costThresholdUsd?: number;
   /** System Evolution services; when present, the live `policy` configuration document drives approvals. */
   system?: SystemServices | null;
+  /** Pipeline engine (Phase 6); null → studio_game_create plans only and reports the engine as unavailable. */
+  pipeline?: PipelineEngine | null;
   now?: () => Date;
 }
 
@@ -79,9 +82,11 @@ export class Gateway {
   private readonly costThreshold: number;
   private readonly now: () => Date;
   readonly system: SystemServices | null;
+  readonly pipeline: PipelineEngine | null;
 
   constructor(o: GatewayOptions) {
     this.system = o.system ?? null;
+    this.pipeline = o.pipeline ?? null;
     this.audit = o.audit;
     this.store = o.store;
     this.handlers = o.handlers;
@@ -209,6 +214,7 @@ export class Gateway {
       const out = await handler.run(input, {
         gateway: this,
         system: this.system,
+        pipeline: this.pipeline,
         store: this.store,
         caller: ctx.caller,
         role: ctx.role ?? null,

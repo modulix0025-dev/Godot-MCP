@@ -315,6 +315,34 @@ export class StudioStore {
     return run;
   }
 
+  /** Update one stage of a run in place (pipeline engine); persisted immediately so a crash loses nothing. */
+  updateStage(
+    projectId: string,
+    runId: string,
+    stage: PipelineStage,
+    patch: Partial<Omit<StageState, 'stage'>>,
+  ): StageState {
+    const run = this.mustProject(projectId).runs.find((r) => r.run_id === runId);
+    const st = run?.stages.find((s) => s.stage === stage);
+    if (!run || !st) throw new Error(`unknown run/stage '${runId}/${stage}'`);
+    Object.assign(st, patch);
+    this.save();
+    return st;
+  }
+
+  setRunBlocked(projectId: string, runId: string, blocked: PipelineRun['blocked']): void {
+    const run = this.mustProject(projectId).runs.find((r) => r.run_id === runId);
+    if (!run) throw new Error(`unknown run '${runId}'`);
+    run.blocked = blocked;
+    this.save();
+  }
+
+  addRecentError(projectId: string, message: string, source: string): void {
+    const p = this.mustProject(projectId);
+    p.recent_errors = [...p.recent_errors, { at: this.now().toISOString(), message, source }].slice(-50);
+    this.save();
+  }
+
   setProjectPath(projectId: string, path: string): void {
     this.mustProject(projectId).path = path;
     this.save();

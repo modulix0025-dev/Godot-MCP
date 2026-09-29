@@ -638,3 +638,32 @@ evolutions report BLOCKED honestly, while config and extension evolutions work.
   platform steps (download, signature, install, restore) are the Tauri updater's (Phase 13).
 - **Production UI.** The production System screens wait for the Phase 3 UI decision; the prototype covers
   every section.
+
+## D-042 · RELEASE must drop the MCP NuGet references, not only the sources (DECIDED, built)
+
+Excluding the addon `.cs` files from ExportRelease is not enough. The Windows RELEASE build still shipped
+`McpPlugin.dll`, `ReflectorNet.dll` and the SignalR assemblies. Godot copies every PackageReference into
+`data_<Asm>_*`, whether or not the code uses it.
+
+The generated `.csproj` now puts the two PackageReferences and the `extensions.catalog.json`
+EmbeddedResource in `<ItemGroup Condition="'$(Configuration)' != 'ExportRelease'">`.
+
+Verified on the sample game: RELEASE is BUILT, and its data folder holds `SpaceKidJourney.dll` with no MCP,
+Reflector or SignalR assemblies. The QA build keeps them. The pins are unchanged.
+
+## D-043 · A deterministic game generator stands in for the unavailable agent (DECIDED, built)
+
+The ModuleX Agent repository is not accessible (D-030). So the Studio now turns a GAME_SPEC into a playable
+Godot 4.5.1 .NET project on its own, with a deterministic generator:
+
+- one scene per level;
+- collectibles, hazards, an exit, a HUD with pause;
+- a menu and a shop when the spec asks for them;
+- a win screen and a JSON save.
+
+3D assets are procedural placeholders built from Godot primitives, recorded with provenance
+`source: procedural`. Assets that need a model (textures, concept images, audio) are marked `blocked` with the
+reason. The stage then reports PARTIAL_SUCCESS; it never reports SUCCESS for them.
+
+Claude, or the agent once it connects, improves the game through the Studio tools. The generator is only the
+starting point, and the same input always gives the same files.

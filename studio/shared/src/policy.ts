@@ -77,7 +77,10 @@ export const STUDIO_TOOLS: ToolSpec[] = [
   S('studio_test_manifest_get', 'read', 'Read the test manifest.', { claudeDesktop: true, implemented: true }),
   S('studio_task_graph_get', 'read', 'Read the task graph.', { claudeDesktop: true, implemented: true }),
   S('studio_pipeline_status', 'read', 'Pipeline stages and statuses.', { claudeDesktop: true, implemented: true }),
-  S('studio_pipeline_resume', 'write', 'Resume a paused/blocked pipeline run.'),
+  S('studio_pipeline_resume', 'write', 'Resume a paused/blocked pipeline run.', {
+    claudeDesktop: true,
+    implemented: true,
+  }),
   S('studio_pipeline_cancel', 'write', 'Cancel a pipeline run.'),
   S('studio_asset_generate', 'cost', 'Generate an asset on a trusted ComfyUI worker (costs GPU time).', {
     claudeDesktop: true,

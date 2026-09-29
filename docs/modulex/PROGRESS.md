@@ -14,7 +14,10 @@ All work is on branch `claude/practical-hawking-whz0fm`.
 | 3 · UI Direction Review | **Approved by the owner (2026-09-29, D-022)** | GATE 3 = written owner approval: **passed** |
 | Execution Patch 1 · hardening | **Done up to the phase boundaries** (see below) | green (below) |
 | Execution Patch 2 · System Evolution | **Done up to the phase boundaries** (see below) | green (below) |
-| 4–15 | Not started as phases. Patch 1 moved the Phase 5 gateway, Phase 12 predicate and parts of Phase 13 forward as contracts and tests. Production UI still waits for GATE 3. | — |
+| 4 · Core foundation | **Done** | GATE 4 live suite 6/6 against a real Godot 4.5.1 editor (locally and in CI) |
+| 5–6 · Gateway + pipeline engine | **Done.** Playtest, visual and optimization stages report PARTIAL_SUCCESS until Phase 9. | GATE 6 live: spec → exported builds (locally and in CI job `studio-pipeline`) |
+| 10 · Template + Build Service | **Windows, iOS-prep and Android-BLOCKED paths done.** Smoke on a Windows host is still open. | same GATE 6 run |
+| 7–9, 11–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -165,7 +168,7 @@ verified in CI.
 | # | Scenario | Evidence | State |
 |---|---|---|---|
 | 1 | The ModuleX Agent builds a game end to end with Agent-safe tools only | Policy tests show that the default agent sees only `studio_*` tools and that raw calls are refused | **Boundary only.** It needs the ModuleX Agent (D-030) and Phases 6–10. |
-| 2 | Claude Desktop: "make a 3D game about a kid's space journey, 5 levels, scores, a shop" | `core/tests/security.test.ts` "game spec + manifests over MCP": spec → 6 manifests → 21-task graph; manifests readable; the stage after planning reports BLOCKED `PIPELINE_ENGINE_UNAVAILABLE` | **Planning PASS. Execution BLOCKED** (Phase 6+). |
+| 2 | Claude Desktop: "make a 3D game about a kid's space journey, 5 levels, scores, a shop" | `core/tests/security.test.ts` "game spec + manifests over MCP": spec → 6 manifests → 21-task graph; manifests readable; the stage after planning reports BLOCKED `PIPELINE_ENGINE_UNAVAILABLE` | **Planning PASS. Execution PASS since Phase 6** (GATE 6, `core/tests/live-pipeline.test.ts`). Without Godot configured, it still reports `PIPELINE_ENGINE_UNAVAILABLE`. |
 | 3 | Claude Desktop: "delete all generated assets" | The acceptance test: PENDING_APPROVAL with What/Why/Scope/Files/Risk/Rollback; Claude cannot approve; after the owner approves, the files move to `.modulex/trash/<approval_id>/` (restorable); the approval cannot be reused | **PASS** |
 | 4 | An iOS release on Windows | `evaluateCompletion` / `iosStatus`: BLOCKED "macOS/Xcode build worker required", or PARTIAL_SUCCESS with other platforms | **Contract PASS.** Real exports come in Phase 10/11. |
 | 5 | A prompt injection inside content | The acceptance test: the content is stored as data, `untrusted_content_flagged` is audited, and no policy changes | **PASS** |
@@ -245,6 +248,56 @@ detail is in [`system-evolution.md`](system-evolution.md).
 
 ---
 
+## Phase 4: Core foundation
+
+The work is in commit `541cf07`:
+
+- `studio.db` (node:sqlite), with a recorded migration and a backup.
+- The Godot pin check.
+- Supervisors for the MCP server and the editor.
+- GodotCall.
+- Git checkpoints for game projects.
+- A resumable, checksum-verified downloader.
+
+GATE 4 (`core/tests/live-godot.test.ts`) passes 6/6 on a real Godot 4.5.1 editor, both locally and in CI.
+
+## Phases 5–6 and 10: from a Game Specification to builds
+
+- **Game generator** (`core/src/project/game-generator.ts`). This is a deterministic GAME_SPEC → Godot 4.5.1 .NET project generator (D-043). It writes:
+  - the scripts, the scenes and the input map;
+  - the `GameState` autoload (score, lives, levels, shop, win/lose, save);
+  - the `.sln`, and the `.csproj` with the ExportRelease exclusion (D-042);
+  - `export_presets.cfg`.
+- **Project factory.** It writes the files, the addons and the `.modulex` manifests. It then runs `godot --import` and `dotnet build`, and creates the first git checkpoint.
+- **Scene runner.** It runs each scene headless as the main scene, with autoloads, and fails on project errors only.
+- **Build Service.** The Godot exit code is never trusted:
+  - Windows must produce the `.exe` and `data_<Asm>_windows_x86_64/<Asm>.dll`.
+  - RELEASE and PREVIEW are exported from a git-worktree snapshot with the `ModulexQa` autoload removed. The output is then checked with `distributableViolations`.
+  - Export logs are written next to the build, not inside it.
+  - iOS on a non-macOS host is **PREPARED** (a git bundle).
+  - Android without an SDK is **BLOCKED**.
+- **Pipeline engine** (`core/src/pipeline/engine.ts`).
+  - It is resumable, and runs one execution per project.
+  - Each stage is persisted as RUNNING, then gets an outcome with evidence.
+  - It stops at FAILED, BLOCKED or NEEDS_HUMAN.
+  - Every PARTIAL_SUCCESS names what was not done.
+  - `studio_game_create` now executes in the background, and `studio_pipeline_resume` is implemented and advertised to Claude Desktop.
+
+GATE 6 (`core/tests/live-pipeline.test.ts`, run locally in 114 s with Godot 4.5.1 mono):
+
+```
+technical_specification … build: SUCCESS
+asset_generation: SUCCESS (all SAMPLE_GAME_SPEC assets are procedural, provenance source=procedural)
+playtest / visual_inspection / optimization: PARTIAL_SUCCESS (tier not wired yet, reason recorded)
+export: PARTIAL_SUCCESS — windows RELEASE BUILT; android BLOCKED: Android SDK not configured;
+        ios PREPARED — macOS/Xcode build worker required
+windows-release/data_SpaceKidJourney_windows_x86_64: SpaceKidJourney.dll, no McpPlugin/ReflectorNet/SignalR
+```
+
+A Linux RELEASE export of the same project, done by hand, boots and runs 300 frames with no errors.
+
+CI job `studio-pipeline` runs the same gate. It uploads the Windows RELEASE build as the artifact `sample-game-space-kid-journey-windows`.
+
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 
 ```
@@ -285,9 +338,9 @@ The earlier gate outputs are in this file's git history.
 3. **GLB import requires a full scan.** Consider upstreaming a `ReimportClassifier` fix (D-007).
 4. **The 16 px icon** is now pixel-hinted (Patch 1). It still needs the owner's review.
 5. **NSIS install path.** It should become `%LOCALAPPDATA%\Programs\ModuleX Game Studio` (Phase 13).
-6. **Generated projects need attention in the Phase 10 template:** they need a `.sln`, the `ExportRelease`
-   MCP exclusion, **the `ModulexQa` autoload strip for PREVIEW/RELEASE (D-032)**, and `.claude/skills`
-   handling.
+6. **Generated projects:** the `.sln`, the ExportRelease exclusion (D-042) and the `ModulexQa` strip
+   (D-032) are done. The generated Windows build still needs a smoke run on a real Windows host, which is
+   planned for Phase 10 Windows CI.
 7. **The ModuleX Agent codebase is not accessible** (D-030). Scenario #1 cannot run until it connects to
    `/mcp`.
 8. **The Windows Credential Manager bridge** passes `cargo check` for the Windows target. It is exercised

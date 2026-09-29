@@ -134,3 +134,65 @@ jobs:
             gate4.log
           if-no-files-found: ignore
           retention-days: 7
+
+  studio-pipeline:
+    # GATE 6/10: SAMPLE_GAME_SPEC → studio_game_create → the real pipeline engine (project creation, import,
+    # dotnet build, every scene headless, static QA, Windows QA build, Windows RELEASE / iOS PREPARED / Android
+    # BLOCKED exports). Needs the export templates, so it is a separate job from the harness above.
+    name: Studio pipeline — Game Specification to builds (Godot 4.5.1 mono)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GODOT_VERSION: "4.5.1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup Godot ${{ env.GODOT_VERSION }} (mono, with export templates)
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: true
+          include-templates: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+
+      - name: GATE 6 — creation pipeline end to end
+        run: |
+          set -euo pipefail
+          (cd cli && npm ci && npm run build)
+          (cd studio && npm ci && npm run build -w @modulex/shared)
+          export MODULEX_LIVE_GODOT="$(readlink -f "$(command -v godot)")"
+          export MODULEX_LIVE_PROJECTS_ROOT="$(pwd)/gate6-games"
+          mkdir -p "$MODULEX_LIVE_PROJECTS_ROOT"
+          cd studio/core
+          npx vitest run --reporter=verbose tests/live-pipeline.test.ts 2>&1 | tee ../../gate6.log
+          grep -q "Windows QA + RELEASE builds: exercised" ../../gate6.log
+
+      - name: Upload the generated sample game (Windows RELEASE build)
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sample-game-space-kid-journey-windows
+          path: gate6-games/space-kid-journey/build-output/0.1.0/windows-release/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload GATE 6 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: studio-pipeline-evidence
+          path: |
+            gate6.log
+            gate6-games/space-kid-journey/build-output/0.1.0/logs/
+          if-no-files-found: ignore
+          retention-days: 7

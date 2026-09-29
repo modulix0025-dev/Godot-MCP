@@ -16,6 +16,7 @@ import type { StudioDb } from '../db/database.js';
 export const PROJECT_GITIGNORE = `# ModuleX Game Studio — generated project
 .godot/
 build/
+build-output/
 .modulex/tmp/
 .modulex/scratch/
 *.tmp

@@ -23,11 +23,14 @@ import type { ProjectRecord, StudioStore } from '../store/studio-store.js';
 import type { ApprovalImpact, Gateway } from './gateway.js';
 import type { SystemServices } from '../evolution/system.js';
 import { evolutionHandlers } from './evolution-handlers.js';
+import type { PipelineEngine } from '../pipeline/engine.js';
 
 export interface HandlerContext {
   gateway: Gateway;
   /** System Evolution services (null when Core runs without a data directory, e.g. in some tests). */
   system: SystemServices | null;
+  /** Pipeline engine; null when this Core runs without Godot configured. */
+  pipeline: PipelineEngine | null;
   store: StudioStore;
   caller: Caller;
   role: Role | null;
@@ -70,6 +73,15 @@ function mustProject(store: StudioStore, id: string): ProjectRecord {
       ),
     );
   return p;
+}
+
+/** Run the pipeline without holding the tool call open; failures land in the run's stages, never unhandled. */
+async function startInBackground(pipeline: PipelineEngine, projectId: string, gateway: Gateway): Promise<void> {
+  try {
+    await pipeline.execute(projectId);
+  } catch (e) {
+    gateway.audit.append('tool_call_failed', 'studio-pipeline', { project_id: projectId, error: (e as Error).message });
+  }
 }
 
 /** Standard description footer: authorization + destructiveness, derived from the policy catalogue. */
@@ -194,7 +206,7 @@ export function createHandlers(): Map<string, ToolHandler> {
         'Start a new game. You provide the complete Game Specification (GAME_SPEC); the Studio validates it, stores it as .modulex/game-spec.json, derives the scene manifest, asset manifest, test manifest, build manifest and task graph, and creates a pipeline run. Nothing is generated or built before the spec is valid.\n' +
           'Changes: creates the project record and its manifests (idempotent on spec.project.id — calling again replaces the spec and re-derives the plan).\n' +
           "Args: spec = GAME_SPEC object. Keep the owner's brief verbatim in spec.project.brief and use the owner's language for names. Required fields (all): schema=1, project{id,name,language,brief}, genre, target_audience, platforms[windows|android|ios], game_loop, player{description,abilities}, characters[{id,name,role,needs_rig}], world, levels[{id,name,goal,scene}], scenes[{id,purpose}], mechanics[{id,description}], controls[{action,description,default_keys}], ui[{id,purpose}], audio[{id,purpose}], win_conditions[], lose_conditions[], save_system{required,description?}, progression, assets[{id,type,description,required}] (type: character|prop|environment|texture|material|concept_image|animation|audio|ui), dependencies[], performance_targets{fps,...}, build_profiles[DEV|QA|PREVIEW|RELEASE]. Every level.scene must be a scenes[].id; ids are lowercase [a-z0-9_-].\n" +
-          'Output: {project_id, created, manifests:{scenes, assets, tests, tasks}, run_id, pipeline}. pipeline.blocked explains any stage that cannot run in this Studio build.\n' +
+          'Output: {project_id, created, manifests:{scenes, assets, tests, tasks}, run_id, pipeline:{executing, completed, blocked, next}}. When executing=true the Studio now creates the Godot project, validates every scene, runs QA and builds/exports in the background (minutes); poll studio_pipeline_status. pipeline.blocked explains why nothing is executing.\n' +
           'Errors: SPEC_INVALID with details.issues [{path, message}] — fix those fields and call again.\n' +
           `Minimal valid example project block: ${JSON.stringify(SAMPLE_GAME_SPEC.project)}`,
       ),
@@ -202,7 +214,7 @@ export function createHandlers(): Map<string, ToolHandler> {
         spec: z.record(z.string(), z.unknown()).describe('Complete GAME_SPEC object (see description).'),
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      run: async (a, { store, gateway, caller }) => {
+      run: async (a, { store, gateway, caller, pipeline }) => {
         const parsed = GameSpecSchema.safeParse(a.spec);
         if (!parsed.success) {
           throw new StudioFailure(
@@ -220,15 +232,28 @@ export function createHandlers(): Map<string, ToolHandler> {
         }
         const { project, created } = store.upsertFromSpec(parsed.data);
         gateway.audit.append('game_spec_created', caller, { project_id: project.project_id, created });
-        const run = store.createRun(project.project_id, {
-          code: 'PIPELINE_ENGINE_UNAVAILABLE',
-          message:
-            'Planning is complete. Project creation and later stages run when the pipeline engine (EXECUTION_PROMPT Phase 6) is enabled in this Studio build.',
-        });
+        if (pipeline?.isRunning(project.project_id))
+          throw new StudioFailure(
+            studioError(
+              'FAILED',
+              'PIPELINE_BUSY',
+              `A pipeline run for '${project.project_id}' is already executing.`,
+              'Poll studio_pipeline_status until it finishes, then call again.',
+              true,
+            ),
+          );
+        const run = pipeline
+          ? pipeline.start(project.project_id)
+          : store.createRun(project.project_id, {
+              code: 'PIPELINE_ENGINE_UNAVAILABLE',
+              message:
+                'Planning is complete. Project creation and later stages need Godot 4.5.1 .NET configured in this Studio (Setup Assistant).',
+            });
         gateway.audit.append('pipeline_run_created', caller, { project_id: project.project_id, run_id: run.run_id });
+        if (pipeline) void startInBackground(pipeline, project.project_id, gateway);
         const m = project.manifests;
         return {
-          status: 'PARTIAL_SUCCESS',
+          status: pipeline ? 'SUCCESS' : 'PARTIAL_SUCCESS',
           data: {
             project_id: project.project_id,
             created,
@@ -240,11 +265,50 @@ export function createHandlers(): Map<string, ToolHandler> {
             },
             run_id: run.run_id,
             pipeline: {
+              executing: Boolean(pipeline),
               completed: run.stages.filter((s) => s.status === 'SUCCESS').map((s) => s.stage),
               blocked: run.blocked,
+              next: pipeline ? 'Poll studio_pipeline_status (every ~30 s) until no stage is PENDING or RUNNING.' : null,
             },
           },
         };
+      },
+    },
+    {
+      id: 'studio_pipeline_resume',
+      title: 'Pipeline / Resume',
+      description: footer(
+        'studio_pipeline_resume',
+        "Resume the project's latest pipeline run from the first stage that is not SUCCESS/PARTIAL_SUCCESS (a FAILED, BLOCKED or NEEDS_HUMAN stage is run again). Returns immediately; the run continues in the background.\n" +
+          'Changes: re-runs stages; stages that change project files take a checkpoint first.\n' +
+          'Args: project_id.\n' +
+          'Output: {run_id, executing, resumed_from}. Poll studio_pipeline_status for progress.\n' +
+          'Errors: NOT_FOUND (no project or no run), PIPELINE_BUSY never returned (an executing run reports executing=true), PIPELINE_ENGINE_UNAVAILABLE (Godot not configured).',
+      ),
+      input: z.object({ project_id: projectId }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      run: async (a, { store, gateway, caller, pipeline }) => {
+        const p = mustProject(store, a.project_id as string);
+        const run = p.runs.at(-1);
+        if (!run)
+          throw new StudioFailure(
+            studioError('FAILED', 'NOT_FOUND', 'This project has no pipeline run.', 'Call studio_game_create first.'),
+          );
+        if (!pipeline)
+          throw new StudioFailure(
+            studioError(
+              'BLOCKED',
+              'PIPELINE_ENGINE_UNAVAILABLE',
+              'The pipeline engine is not available: Godot 4.5.1 .NET is not configured in this Studio.',
+              'Ask the owner to finish the Setup Assistant (Godot component).',
+            ),
+          );
+        if (pipeline.isRunning(p.project_id))
+          return { status: 'SUCCESS', data: { run_id: run.run_id, executing: true, resumed_from: null } };
+        const from = run.stages.find((s) => s.status !== 'SUCCESS' && s.status !== 'PARTIAL_SUCCESS')?.stage ?? null;
+        gateway.audit.append('pipeline_resumed', caller, { project_id: p.project_id, run_id: run.run_id, from });
+        if (from) void startInBackground(pipeline, p.project_id, gateway);
+        return { status: 'SUCCESS', data: { run_id: run.run_id, executing: Boolean(from), resumed_from: from } };
       },
     },
     {
