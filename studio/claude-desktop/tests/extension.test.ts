@@ -15,7 +15,9 @@ import { startCore, type CoreServer } from '@modulex/core/dist/server.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = resolve(root, 'bundle');
-const mcpbBin = resolve(root, '../node_modules/.bin/mcpb');
+// Run the CLI's JS entry through Node: node_modules/.bin/mcpb is a .cmd shim on Windows (spawn → ENOENT).
+const mcpbCli = resolve(root, '../node_modules/@anthropic-ai/mcpb/dist/cli/cli.js');
+const mcpb = (args: string[]) => execFileSync(process.execPath, [mcpbCli, ...args], { encoding: 'utf-8' });
 
 beforeAll(() => {
   if (!existsSync(resolve(bundle, 'server/index.mjs')) || !existsSync(resolve(root, 'dist/modulex-game-studio.mcpb'))) {
@@ -38,7 +40,7 @@ async function bridge(env: Record<string, string>): Promise<Client> {
 
 describe('package', () => {
   it('manifest is a valid MCPB manifest (official validator)', () => {
-    const out = execFileSync(mcpbBin, ['validate', resolve(bundle, 'manifest.json')], { encoding: 'utf-8' });
+    const out = mcpb(['validate', resolve(bundle, 'manifest.json')]);
     expect(out).toMatch(/valid/i);
   });
 
@@ -53,7 +55,7 @@ describe('package', () => {
 
   it('the .mcpb bundle is produced', () => {
     expect(existsSync(resolve(root, 'dist/modulex-game-studio.mcpb'))).toBe(true);
-    const info = execFileSync(mcpbBin, ['info', resolve(root, 'dist/modulex-game-studio.mcpb')], { encoding: 'utf-8' });
+    const info = mcpb(['info', resolve(root, 'dist/modulex-game-studio.mcpb')]);
     expect(info).toMatch(/modulex-game-studio/);
   });
 });
