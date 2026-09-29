@@ -23,7 +23,8 @@ export type Role =
   | 'technical-artist'
   | '3d-asset-producer'
   | 'qa'
-  | 'build-release';
+  | 'build-release'
+  | 'studio-maintainer';
 
 export interface ToolSpec {
   id: string;
@@ -115,6 +116,72 @@ export const STUDIO_TOOLS: ToolSpec[] = [
   S('studio_approval_list', 'read', 'List pending approvals.', { claudeDesktop: true, implemented: true }),
   S('studio_approval_action', 'read', 'Withdraw your own approval request. Approve/reject is owner-only (Studio UI).', {
     claudeDesktop: true,
+    implemented: true,
+  }),
+  // ---- System Evolution (Execution Patch 2 §30). Approval of an evolution is owner-only (Studio UI); agents can
+  // propose, plan, test, diff and REQUEST review. Deploy/rollback/installs always pause for the owner.
+  S('studio_system_status', 'read', 'Versions, health, Safe Mode, extensions and the evolution summary.', {
+    claudeDesktop: true,
+    implemented: true,
+  }),
+  S('studio_config_get', 'read', 'Read a configuration document (policy, budgets, routing, …) and its version.', {
+    implemented: true,
+  }),
+  S('studio_config_propose', 'write', 'Propose a configuration change (Mode A); the owner approves the exact diff.', {
+    implemented: true,
+  }),
+  S('studio_evolution_propose', 'write', 'Classify a change request and open a System Evolution proposal.', {
+    implemented: true,
+  }),
+  S('studio_evolution_plan', 'write', 'Attach the implementation plan, files and risks to a core evolution.', {
+    implemented: true,
+  }),
+  S('studio_evolution_test', 'write', 'Run the risk-based test gates for an evolution in its sandbox.', {
+    implemented: true,
+  }),
+  S('studio_evolution_diff', 'read', 'The exact diff and change report of an evolution.', { implemented: true }),
+  S('studio_evolution_approve', 'read', 'Submit an evolution for OWNER review (you cannot approve it yourself).', {
+    implemented: true,
+  }),
+  S(
+    'studio_evolution_deploy',
+    'write',
+    'Deploy an OWNER-APPROVED evolution (approval bound to its diff): checkpoint, deploy, health check, verify.',
+    {
+      implemented: true,
+    },
+  ),
+  S('studio_evolution_rollback', 'destructive', 'Roll back a deployed evolution to its checkpoint.', {
+    implemented: true,
+  }),
+  S('studio_evolution_history', 'read', 'Evolution history (version, change, requester, tests, approval, rollback).', {
+    implemented: true,
+  }),
+  S('studio_extension_list', 'read', 'Installed extensions, Skills, workflows and providers.', { implemented: true }),
+  S('studio_extension_install', 'write', 'Install an extension package (inspected, sandboxed, owner-approved).', {
+    implemented: true,
+  }),
+  S('studio_extension_enable', 'destructive', 'Enable an installed extension (grants its approved permissions).', {
+    implemented: true,
+  }),
+  S('studio_extension_disable', 'write', 'Disable an extension (a safe, reversible action).', { implemented: true }),
+  S('studio_extension_update', 'write', 'Update an extension to a new version (old version kept for rollback).', {
+    implemented: true,
+  }),
+  S('studio_skill_install', 'write', 'Install a Skill (an extension of kind skill).', { implemented: true }),
+  S('studio_skill_update', 'write', 'Update a Skill.', { implemented: true }),
+  S('studio_workflow_register', 'write', 'Register a new workflow version (validated + test job in sandbox).', {
+    implemented: true,
+  }),
+  S('studio_workflow_update', 'write', 'Activate or pin a workflow version.', { implemented: true }),
+  S('studio_provider_register', 'write', 'Register a provider on a built-in adapter family.', {
+    implemented: true,
+  }),
+  S('studio_provider_update', 'write', 'Update a provider definition.', { implemented: true }),
+  S('studio_diagnostics_run', 'read', 'Diagnose the Studio itself (Core, Godot, MCP, workers, extensions, config).', {
+    implemented: true,
+  }),
+  S('studio_system_repair', 'destructive', 'Apply a recommended non-security repair (restart, disable extension, …).', {
     implemented: true,
   }),
   S('studio_policy_change', 'critical', 'Change policy (owner UI only).'),
@@ -213,7 +280,32 @@ export const ROLE_TOOLS: Record<Role, string[]> = {
   '3d-asset-producer': ['studio_asset_'],
   qa: ['studio_test_', 'studio_playtest', 'studio_visual_inspect', 'studio_fix_failure'],
   'build-release': ['studio_build', 'studio_export'],
+  'studio-maintainer': [
+    'studio_config_',
+    'studio_evolution_',
+    'studio_extension_',
+    'studio_skill_',
+    'studio_workflow_',
+    'studio_provider_',
+    'studio_system_',
+    'studio_diagnostics_',
+  ],
 };
+
+/**
+ * Tools whose approval can never be relaxed by configuration or "always allow" (Execution Patch 2 §33): the
+ * controls that govern how the Studio changes itself.
+ */
+export const PROTECTED_TOOL_PREFIXES = [
+  'studio_evolution_',
+  'studio_extension_',
+  'studio_skill_',
+  'studio_workflow_',
+  'studio_provider_',
+  'studio_system_repair',
+  'studio_config_',
+] as const;
+export const isProtectedTool = (toolId: string): boolean => PROTECTED_TOOL_PREFIXES.some((p) => toolId.startsWith(p));
 
 export interface DevModeState {
   enabled: boolean;
@@ -333,13 +425,16 @@ export function decide(toolId: string, ctx: PolicyContext): Decision {
     return { effect: 'deny', tier, code: 'TOOL_NOT_ALLOWED', reason: `Role '${ctx.role}' may not call '${toolId}'.` };
   }
   if (tier === 'destructive') {
-    return ctx.alwaysAllow?.has(toolId)
+    // "Always allow" overrides apply to the ModuleX Agent only — never to Claude Desktop — and never to the
+    // protected System Evolution / extension tools.
+    return ctx.caller === 'modulex-agent' && !isProtectedTool(toolId) && ctx.alwaysAllow?.has(toolId)
       ? allow(tier)
       : { effect: 'ask', tier, reason: 'Destructive action — owner approval required.' };
   }
   if (tier === 'cost') {
     const cost = ctx.estimatedCostUsd;
     const threshold = ctx.costThresholdUsd ?? 0.25;
+    if (ctx.caller === 'modulex-agent' && ctx.alwaysAllow?.has(toolId)) return allow(tier);
     if (cost === undefined) return { effect: 'ask', tier, reason: 'Cost unknown — owner approval required.' };
     return cost > threshold
       ? { effect: 'ask', tier, reason: `Estimated $${cost.toFixed(2)} exceeds the $${threshold.toFixed(2)} threshold.` }

@@ -12,3 +12,7 @@ export * from './setup-components.js';
 export * from './untrusted.js';
 export * from './audit-events.js';
 export * from './examples.js';
+export * from './evolution.js';
+export * from './extensions.js';
+export * from './versions.js';
+export * from './config-docs.js';
