@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { CREATION_PIPELINE, SAMPLE_GAME_SPEC, type GameSpec, type PipelineStage } from '@modulex/shared';
 import { AuditLog } from '../src/audit/audit-log.js';
 import { Redactor } from '../src/audit/secrets.js';
-import { BuildService } from '../src/build/build-service.js';
+import { BuildService, buildRequirements } from '../src/build/build-service.js';
 import { Gateway } from '../src/gateway/gateway.js';
 import { createHandlers } from '../src/gateway/tool-handlers.js';
 import { chooseProfiles, PipelineEngine, type StageExecutor } from '../src/pipeline/engine.js';
@@ -76,6 +76,42 @@ describe('godotErrors', () => {
     expect(e).toHaveLength(2);
     expect(e[0]).toMatch(/Parse Error/);
     expect(e[1]).toMatch(/missing\.tscn/);
+  });
+});
+
+describe('build requirements and versioning', () => {
+  it('lists what is missing before a build, and never reads a secret value', async () => {
+    const win = await buildRequirements('windows', 'RELEASE', { templatesDir: tmp() });
+    expect(win).toEqual([expect.objectContaining({ id: 'export_templates', ok: false })]);
+    const android = await buildRequirements('android', 'RELEASE', {
+      androidSdk: null,
+      templatesDir: tmp(),
+      env: { GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: 's3cret' },
+    });
+    expect(android.map((r) => r.id)).toEqual(['jdk17', 'android_sdk', 'android_templates', 'release_keystore']);
+    expect(android.find((r) => r.id === 'release_keystore')!.ok).toBe(false);
+    expect(JSON.stringify(android)).not.toContain('s3cret');
+    expect(await buildRequirements('ios', 'RELEASE', { macWorkerOnline: false })).toEqual([
+      expect.objectContaining({ id: 'macos_worker', ok: false }),
+    ]);
+  });
+
+  it('Android version/code increases monotonically per project', () => {
+    const b = new BuildService({ godot: 'unused' });
+    const projectDir = tmp();
+    expect([
+      b.nextAndroidCode({ projectDir }),
+      b.nextAndroidCode({ projectDir }),
+      b.nextAndroidCode({ projectDir }),
+    ]).toEqual([1, 2, 3]);
+  });
+
+  it('the template carries the AAB preset and a nuget.config', () => {
+    const g = generateProject(spec());
+    expect(g.files.find((f) => f.path === 'export_presets.cfg')!.content).toMatch(
+      /name="Android AAB"[\s\S]*gradle_build\/use_gradle_build=true/,
+    );
+    expect(g.files.find((f) => f.path === 'nuget.config')!.content).toContain('api.nuget.org');
   });
 });
 

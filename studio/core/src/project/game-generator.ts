@@ -94,6 +94,8 @@ const REQUIRED_ACTIONS: Record<string, string[]> = {
   pause: ['Escape'],
 };
 
+export const QA_ACTIONS = ['qa_lose', 'qa_save_roundtrip', 'qa_win'] as const;
+
 function inputMap(spec: GameSpec): string {
   const actions = new Map<string, string[]>();
   for (const [a, keys] of Object.entries(REQUIRED_ACTIONS)) actions.set(a, keys);
@@ -103,6 +105,8 @@ function inputMap(spec: GameSpec): string {
     const codes = [...new Set(keys.map(physicalKeycode).filter((c): c is number => c !== null))];
     out.push(`${action}={\n"deadzone": 0.2,\n"events": [${codes.map(keyEvent).join(', ')}]\n}`);
   }
+  // QA-only actions with no key bindings; GameState honours them only in debug builds under MODULEX_QA=1.
+  for (const qa of QA_ACTIONS) out.push(`${qa}={\n"deadzone": 0.2,\n"events": []\n}`);
   return out.join('\n');
 }
 
@@ -114,6 +118,9 @@ const GAME_STATE = (spec: GameSpec, levels: string[], shop: string | null, menu:
 signal score_changed(score: int)
 signal lives_changed(lives: int)
 signal message(text: String)
+signal won
+signal lost
+signal save_verified(ok: bool)
 
 const LEVELS: Array[String] = [${levels.map((l) => `"${l}"`).join(', ')}]
 const LEVEL_NAMES: Array[String] = [${spec.levels.map((l) => `"${esc(l.name)}"`).join(', ')}]
@@ -132,8 +139,36 @@ var unlocked := 1
 var cosmetics: Dictionary = {}
 
 
+## QA hooks: only in DEBUG builds started by the ModuleX QA runner (MODULEX_QA=1). Release exports ignore them.
+var _qa := OS.is_debug_build() and OS.get_environment("MODULEX_QA") == "1"
+
+
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	load_game()
+
+
+func _process(_delta: float) -> void:
+	if not _qa:
+		return
+	if Input.is_action_just_pressed("qa_win"):
+		level_index = LEVELS.size() - 1
+		level_complete()
+	elif Input.is_action_just_pressed("qa_lose"):
+		lose()
+	elif Input.is_action_just_pressed("qa_save_roundtrip"):
+		_qa_save_roundtrip()
+
+
+func _qa_save_roundtrip() -> void:
+	if not SAVE_ENABLED:
+		save_verified.emit(true)
+		return
+	var before := score
+	save_game()
+	score = -1
+	load_game()
+	save_verified.emit(score == before)
 
 
 func start_game() -> void:
@@ -174,6 +209,7 @@ func level_complete() -> void:
 	unlocked = maxi(unlocked, level_index + 1)
 	save_game()
 	if level_index >= LEVELS.size():
+		won.emit()
 		get_tree().call_deferred("change_scene_to_file", WIN_SCENE)
 	elif SHOP_SCENE != "":
 		get_tree().call_deferred("change_scene_to_file", SHOP_SCENE)
@@ -186,6 +222,7 @@ func continue_from_shop() -> void:
 
 
 func lose() -> void:
+	lost.emit()
 	message.emit("Try again!")
 	lives = START_LIVES
 	_go_level()
@@ -241,6 +278,9 @@ const SPEED := 6.0
 const JUMP_VELOCITY := 5.5
 const KILL_PLANE := -12.0
 
+signal jumped
+signal interacted
+
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _knockback := Vector3.ZERO
 
@@ -266,6 +306,9 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= gravity * delta
 	if Input.is_action_just_pressed("jump") and is_on_floor():
 		velocity.y = JUMP_VELOCITY
+		jumped.emit()
+	if Input.is_action_just_pressed("interact"):
+		interacted.emit()
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var dir := Vector3(input.x, 0.0, input.y)
 	if dir.length() > 0.01:
@@ -413,8 +456,8 @@ func _ready() -> void:
 	pause_label.visible = false
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause"):
+func _process(_delta: float) -> void:
+	if Input.is_action_just_pressed("pause"):
 		get_tree().paused = not get_tree().paused
 		pause_label.visible = get_tree().paused
 
@@ -954,8 +997,48 @@ application/min_ios_version="14.0"
 dotnet/include_scripts_content=false
 dotnet/include_debug_symbols=true
 dotnet/embed_build_outputs=false
+
+${common(3, 'Android AAB', 'Android', `build/android/${assembly}.aab`)}
+[preset.3.options]
+
+custom_template/debug=""
+custom_template/release=""
+gradle_build/use_gradle_build=true
+gradle_build/export_format=1
+architectures/armeabi-v7a=false
+architectures/arm64-v8a=true
+architectures/x86=false
+architectures/x86_64=false
+version/code=1
+version/name="0.1.0"
+package/unique_name="com.modulex.${slug}"
+package/name="${esc(spec.project.name)}"
+package/signed=true
+screen/immersive_mode=true
+keystore/debug=""
+keystore/debug_user=""
+keystore/debug_password=""
+keystore/release=""
+keystore/release_user=""
+keystore/release_password=""
+dotnet/include_scripts_content=false
+dotnet/include_debug_symbols=true
+dotnet/embed_build_outputs=false
 `;
 }
+
+/**
+ * NuGet sources for the game project. The Setup Assistant adds the bundled offline feed in front of nuget.org when
+ * it is installed; a missing local folder would fail restore, so it is never written here.
+ */
+const NUGET_CONFIG = `<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+  </packageSources>
+</configuration>
+`;
 
 // ------------------------------------------------------------------ entry
 
@@ -980,6 +1063,7 @@ export function generateProject(
     { path: `${assembly}.csproj`, content: csproj(assembly) },
     { path: `${assembly}.sln`, content: solution(assembly, projectGuid) },
     { path: 'export_presets.cfg', content: exportPresets(spec, assembly) },
+    { path: 'nuget.config', content: NUGET_CONFIG },
     { path: 'scripts/game_state.gd', content: GAME_STATE(spec, levelScenes, shop, menu) },
     { path: 'scripts/player.gd', content: PLAYER },
     { path: 'scripts/collectible.gd', content: COLLECTIBLE },

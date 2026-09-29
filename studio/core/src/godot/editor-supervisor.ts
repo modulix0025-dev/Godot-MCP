@@ -19,6 +19,8 @@ export interface GodotLaunchOptions {
   headless?: boolean;
   /** Game only: scene to start and window geometry. */
   scene?: string;
+  /** Game only: `godot` is an EXPORTED game executable (no --path; it runs its own .pck). */
+  exported?: boolean;
   extraEnv?: Record<string, string>;
   /** Receives stdout/stderr lines, already redacted of the session token. */
   onLog?: (line: string) => void;
@@ -37,7 +39,7 @@ export class GodotProcess {
   constructor(private readonly o: GodotLaunchOptions) {}
 
   args(): string[] {
-    const a = ['--path', this.o.projectPath];
+    const a = this.o.exported ? [] : ['--path', this.o.projectPath];
     if (this.o.mode === 'editor') a.push('--editor');
     else {
       if (this.o.scene) a.push(this.o.scene);

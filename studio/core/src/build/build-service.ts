@@ -86,6 +86,79 @@ function walk(dir: string): string[] {
 
 const PRESET: Record<Platform, string> = { windows: 'Windows Desktop', android: 'Android', ios: 'iOS' };
 
+export interface Requirement {
+  id: string;
+  ok: boolean;
+  detail: string;
+}
+
+/** Export-template folder for a Godot version (user data dir; Windows %APPDATA%, Linux XDG, macOS). */
+export function exportTemplatesDir(version = '4.5.1.stable.mono', env: NodeJS.ProcessEnv = process.env): string {
+  if (process.platform === 'win32') return join(env.APPDATA ?? '', 'Godot', 'export_templates', version);
+  if (process.platform === 'darwin')
+    return join(env.HOME ?? '', 'Library', 'Application Support', 'Godot', 'export_templates', version);
+  return join(env.XDG_DATA_HOME ?? join(env.HOME ?? '', '.local', 'share'), 'godot', 'export_templates', version);
+}
+
+/**
+ * Requirement checks shown BEFORE a build (Phase 10). Secrets are only checked for presence in the environment
+ * (resolved just in time from the credential store); they are never read into the result.
+ */
+export async function buildRequirements(
+  platform: Platform,
+  profile: BuildProfile,
+  o: { androidSdk?: string | null; env?: NodeJS.ProcessEnv; macWorkerOnline?: boolean; templatesDir?: string } = {},
+): Promise<Requirement[]> {
+  const env = { ...process.env, ...o.env };
+  const out: Requirement[] = [];
+  const templates = o.templatesDir ?? exportTemplatesDir(undefined, env);
+  if (platform === 'windows') {
+    const file = join(
+      templates,
+      profile === 'RELEASE' || profile === 'PREVIEW' ? 'windows_release_x86_64.exe' : 'windows_debug_x86_64.exe',
+    );
+    out.push({
+      id: 'export_templates',
+      ok: existsSync(file),
+      detail: existsSync(file) ? templates : `missing ${file}`,
+    });
+  }
+  if (platform === 'android') {
+    let java = '';
+    try {
+      const r = await run('java', ['-version'], { env, timeout: 15_000 });
+      java = `${r.stdout}${r.stderr}`;
+    } catch (e) {
+      java = String((e as { stderr?: string }).stderr ?? '');
+    }
+    const jdk = /version "(\d+)/.exec(java)?.[1];
+    out.push({ id: 'jdk17', ok: jdk === '17', detail: jdk ? `JDK ${jdk}` : 'java not found' });
+    out.push({
+      id: 'android_sdk',
+      ok: Boolean(o.androidSdk && existsSync(o.androidSdk)),
+      detail: o.androidSdk ?? 'not configured',
+    });
+    out.push({ id: 'android_templates', ok: existsSync(join(templates, 'android_debug.apk')), detail: templates });
+    if (profile === 'RELEASE')
+      out.push({
+        id: 'release_keystore',
+        ok: [
+          'GODOT_ANDROID_KEYSTORE_RELEASE_PATH',
+          'GODOT_ANDROID_KEYSTORE_RELEASE_USER',
+          'GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD',
+        ].every((k) => Boolean(env[k])),
+        detail: 'from the credential store via environment only; never written to export_presets.cfg',
+      });
+  }
+  if (platform === 'ios')
+    out.push({
+      id: 'macos_worker',
+      ok: Boolean(o.macWorkerOnline),
+      detail: o.macWorkerOnline ? 'online' : 'macOS/Xcode build worker required for a signed build',
+    });
+  return out;
+}
+
 export class BuildService {
   constructor(private readonly o: BuildServiceOptions) {}
 
@@ -205,12 +278,35 @@ export class BuildService {
     mkdirSync(join(dir, '..'), { recursive: true });
     git(req.projectDir, ['worktree', 'add', '--detach', dir, gitHead(req.projectDir)]);
     const pg = join(dir, 'project.godot');
-    writeFileSync(pg, readFileSync(pg, 'utf-8').replace(/^ModulexQa=.*\r?\n/m, ''));
+    writeFileSync(
+      pg,
+      readFileSync(pg, 'utf-8')
+        .replace(/^ModulexQa=.*\r?\n/m, '')
+        .replace(/^config\/version=".*"$/m, `config/version="${req.version}"`),
+    );
+    const presets = join(dir, 'export_presets.cfg');
+    if (existsSync(presets)) {
+      let text = readFileSync(presets, 'utf-8')
+        .replace(/^version\/name=".*"$/gm, `version/name="${req.version}"`)
+        .replace(/^application\/short_version=".*"$/m, `application/short_version="${req.version}"`);
+      if (req.platform === 'android')
+        text = text.replace(/^version\/code=\d+$/gm, `version/code=${this.nextAndroidCode(req)}`);
+      writeFileSync(presets, text);
+    }
     // The snapshot has no .godot/ import cache; copy it so the export does not re-import from scratch.
     const cache = join(req.projectDir, '.godot');
     if (existsSync(cache))
       cpSync(cache, join(dir, '.godot'), { recursive: true, filter: (p) => !/[\\/]mono([\\/]|$)/.test(p) });
     return dir;
+  }
+
+  /** Android version/code: monotonic per project, persisted in .modulex/android-version-code. */
+  nextAndroidCode(req: Pick<BuildRequest, 'projectDir'>): number {
+    const f = join(req.projectDir, '.modulex', 'android-version-code');
+    const next = (existsSync(f) ? Number(readFileSync(f, 'utf-8').trim()) || 0 : 0) + 1;
+    mkdirSync(join(req.projectDir, '.modulex'), { recursive: true });
+    writeFileSync(f, `${next}\n`);
+    return next;
   }
 
   private dropSnapshot(req: BuildRequest, dir: string): void {
