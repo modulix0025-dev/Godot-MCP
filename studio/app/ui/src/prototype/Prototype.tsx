@@ -24,6 +24,7 @@ import {
   IconSearch,
   IconSettings,
   IconStudio,
+  IconSystem,
   IconTest,
   IconWorkers,
   KeystoneMark,
@@ -36,11 +37,14 @@ import {
   ProjectsScreen,
   SETTINGS_SECTIONS,
   SettingsScreen,
+  SYSTEM_SECTIONS,
+  SystemScreen,
   StudioScreen,
   TestScreen,
   WorkersScreen,
   type ScreenProps,
   type SettingsSection,
+  type SystemSection,
   type ViewState,
 } from './screens';
 
@@ -53,6 +57,7 @@ export const SCREENS = [
   'builds',
   'workers',
   'approvals',
+  'system',
   'settings',
 ] as const;
 export type ScreenId = (typeof SCREENS)[number];
@@ -67,6 +72,7 @@ const ICONS: Record<ScreenId, ComponentType<{ size?: number }>> = {
   builds: IconBuilds,
   workers: IconWorkers,
   approvals: IconApprovals,
+  system: IconSystem,
   settings: IconSettings,
 };
 
@@ -86,9 +92,11 @@ export interface Route {
   theme: 'dark' | 'light';
   lang: Lang;
   section: SettingsSection;
+  sys: SystemSection;
 }
 
 const SECTION_IDS = SETTINGS_SECTIONS.map(([id]) => id) as SettingsSection[];
+const SYS_IDS = SYSTEM_SECTIONS.map(([id]) => id) as SystemSection[];
 
 export function parseRoute(hash: string): Route {
   const [path = '', query = ''] = hash.replace(/^#\/?/, '').split('?');
@@ -100,14 +108,24 @@ export function parseRoute(hash: string): Route {
     state: VIEW_STATES.includes(state) ? state : 'normal',
     theme: q.get('theme') === 'light' ? 'light' : 'dark',
     lang: q.get('lang') === 'ar' ? 'ar' : 'en',
-    section: SECTION_IDS.includes(q.get('section') as SettingsSection)
-      ? (q.get('section') as SettingsSection)
-      : 'appearance',
+    section:
+      screen === 'settings' && SECTION_IDS.includes(q.get('section') as SettingsSection)
+        ? (q.get('section') as SettingsSection)
+        : 'appearance',
+    sys:
+      screen === 'system' && SYS_IDS.includes(q.get('section') as SystemSection)
+        ? (q.get('section') as SystemSection)
+        : 'overview',
   };
 }
 
 export function routeToHash(r: Route): string {
-  const section = r.screen === 'settings' && r.section !== 'appearance' ? `&section=${r.section}` : '';
+  const section =
+    r.screen === 'settings' && r.section !== 'appearance'
+      ? `&section=${r.section}`
+      : r.screen === 'system' && r.sys !== 'overview'
+        ? `&section=${r.sys}`
+        : '';
   return `#/prototype/${r.screen}?state=${r.state}&theme=${r.theme}&lang=${r.lang}${section}`;
 }
 
@@ -166,6 +184,8 @@ export function Prototype() {
         return <WorkersScreen {...props} />;
       case 'approvals':
         return <ApprovalsScreen {...props} />;
+      case 'system':
+        return <SystemScreen {...props} section={route.sys} onSection={(sys) => go({ sys })} />;
       case 'settings':
         return (
           <SettingsScreen

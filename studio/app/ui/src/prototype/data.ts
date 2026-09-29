@@ -502,3 +502,307 @@ export const ROUTING: [string, string][] = [
   ['Fast', 'Claude API · claude-sonnet-5-5 · low'],
   ['Fallback', 'Not set (uses Primary)'],
 ];
+
+// ---------------------------------------------------------------- System (Execution Patch 2)
+
+export const VERSIONS: [string, string][] = [
+  ['ModuleX Game Studio', '0.1.0'],
+  ['Data schema', '1'],
+  ['Godot', '4.5.1 mono'],
+  ['Addon godot_mcp', '0.25.1'],
+  ['Addon modulex_studio', '0.1.0'],
+  ['Worker protocol', '1'],
+  ['MCP server', 'gamedev-mcp-server 9.2.9'],
+];
+
+export const PROJECT_COMPAT = [
+  {
+    name: 'جزيرة المستكشف',
+    status: 'Compatible',
+    tone: 'success' as Tone,
+    note: 'schema 1 · Godot 4.5.1 · addons current',
+  },
+  {
+    name: 'Space Runner',
+    status: 'Upgrade required',
+    tone: 'warning' as Tone,
+    note: 'addon modulex_studio 0.0.9 → 0.1.0 · checkpoint first',
+  },
+  {
+    name: 'Beta Prototype',
+    status: 'Read-only',
+    tone: 'danger' as Tone,
+    note: 'written by ModuleX Game Studio 0.3.0 (newer than this app)',
+  },
+];
+
+export const EXTENSIONS = [
+  {
+    name: 'level-layout-skill',
+    version: '1.1.0',
+    kinds: 'skill',
+    perms: 'project:read',
+    license: 'MIT',
+    health: 'healthy',
+    tone: 'success' as Tone,
+    enabled: true,
+    previous: '1.0.0',
+  },
+  {
+    name: 'stylized-character-workflow',
+    version: '1.0.0',
+    kinds: 'workflow',
+    perms: 'worker:submit-jobs, project:write-assets',
+    license: 'Apache-2.0',
+    health: 'healthy',
+    tone: 'success' as Tone,
+    enabled: true,
+    previous: '—',
+  },
+  {
+    name: 'local-llm-provider',
+    version: '1.0.0',
+    kinds: 'provider',
+    perms: 'llm:call',
+    license: 'MIT',
+    health: 'healthy',
+    tone: 'success' as Tone,
+    enabled: true,
+    previous: '—',
+  },
+  {
+    name: 'gpu-costs-panel',
+    version: '0.2.0',
+    kinds: 'ui_panel',
+    perms: 'ui:panel',
+    license: 'MIT',
+    health: 'failing',
+    tone: 'danger' as Tone,
+    enabled: false,
+    previous: '0.1.0',
+  },
+];
+
+export const INCOMING = [
+  { pkg: 'kenney-props-skill', version: '1.0.0', note: 'waiting in extensions/incoming · not inspected yet' },
+];
+
+export const SKILLS = [
+  {
+    name: 'level-layout-skill',
+    version: '1.1.0',
+    source: 'local',
+    license: 'MIT',
+    perms: 'project:read',
+    tools: 'studio_scene_create, studio_project_validate',
+    updated: '2026-09-29 12:40',
+    health: 'healthy',
+    tone: 'success' as Tone,
+  },
+  {
+    name: 'godot-scene-basics',
+    version: '1.0.0',
+    source: 'builtin',
+    license: 'Apache-2.0',
+    perms: 'project:read',
+    tools: 'studio_scene_manifest_get',
+    updated: '2026-09-20',
+    health: 'healthy',
+    tone: 'success' as Tone,
+  },
+];
+
+export const WORKFLOW_ROWS = [
+  {
+    id: '3D_CHARACTER.stylized_v2',
+    kind: 'comfyui',
+    active: '1.1.0',
+    versions: '1.0.0, 1.1.0',
+    pins: 'جزيرة المستكشف → 1.0.0',
+    caps: '3d',
+    cost: '$0.04 · 240 s',
+    timeout: '900 s · 2 tries',
+  },
+  {
+    id: '3D_CHARACTER.hunyuan3d2',
+    kind: 'comfyui',
+    active: '1.2.0',
+    versions: '1.1.0, 1.2.0',
+    pins: '—',
+    caps: '3d',
+    cost: '$0.06 · 300 s',
+    timeout: '1200 s · 2 tries',
+  },
+  {
+    id: 'EXPORT.windows_release',
+    kind: 'export',
+    active: '1.0.0',
+    versions: '1.0.0',
+    pins: '—',
+    caps: 'build',
+    cost: 'local',
+    timeout: '1800 s · 1 try',
+  },
+];
+
+export const PROVIDER_ROWS = [
+  { kind: 'LLM', id: 'anthropic-api', family: 'anthropic', status: 'Configured', tone: 'success' as Tone },
+  { kind: 'LLM', id: 'local-llm', family: 'openai-compatible-http', status: 'Configured', tone: 'success' as Tone },
+  { kind: 'ComfyUI', id: 'comfyui-pool', family: 'comfyui-http', status: '1 trusted worker', tone: 'success' as Tone },
+  { kind: 'Build', id: 'local-build', family: 'local-build', status: 'Windows · Android', tone: 'success' as Tone },
+  { kind: 'Storage', id: 'project-files', family: 'filesystem-storage', status: 'Local', tone: 'success' as Tone },
+  { kind: 'TTS', id: '—', family: '—', status: 'None', tone: 'neutral' as Tone },
+];
+
+export const EVOLUTIONS = [
+  {
+    version: '0.1.0 → 0.1.0',
+    date: '2026-09-29 12:52',
+    change: 'Policy: studio_asset_delete → Auto (جزيرة المستكشف)',
+    by: 'ModuleX Agent',
+    ai: 'AI',
+    status: 'AWAITING_APPROVAL',
+    tone: 'warning' as Tone,
+    tests: '1/1 gates',
+    approval: '—',
+    rollback: 'available',
+  },
+  {
+    version: '0.1.0 → 0.2.0',
+    date: '2026-09-29 12:31',
+    change: 'New dashboard section: GPU costs',
+    by: 'ModuleX Agent',
+    ai: 'AI',
+    status: 'SUCCESS',
+    tone: 'success' as Tone,
+    tests: '3/3 gates',
+    approval: 'owner 12:35',
+    rollback: 'available',
+  },
+  {
+    version: '0.1.0 → 0.1.0',
+    date: '2026-09-29 11:58',
+    change: 'Install workflow 3D_CHARACTER.stylized_v2 1.0.0',
+    by: 'ModuleX Agent',
+    ai: 'AI',
+    status: 'SUCCESS',
+    tone: 'success' as Tone,
+    tests: '2/2 gates',
+    approval: 'owner 12:02',
+    rollback: 'available',
+  },
+  {
+    version: '0.1.0 → 0.1.0',
+    date: '2026-09-29 11:40',
+    change: 'Install extension kenney-props-skill (licence unknown)',
+    by: 'Owner',
+    ai: 'Manual',
+    status: 'BLOCKED',
+    tone: 'danger' as Tone,
+    tests: '0/1 gates',
+    approval: '—',
+    rollback: '—',
+  },
+  {
+    version: '0.1.0 → 0.1.1',
+    date: '2026-09-28 18:10',
+    change: 'Fix ComfyUI worker reconnect loop',
+    by: 'ModuleX Agent',
+    ai: 'AI',
+    status: 'ROLLED_BACK',
+    tone: 'danger' as Tone,
+    tests: '3/3 gates',
+    approval: 'owner 18:14',
+    rollback: 'health check failed → reverted',
+  },
+];
+
+/** §6 — what the owner sees before approving (a core evolution). */
+export const REVIEW = {
+  id: 'evo_3f2a9c1d-7b21',
+  title: 'Add a new 3D character workflow adapter + asset validator',
+  from: '0.1.0',
+  to: '0.2.0',
+  changes: [
+    '+ New ComfyUI worker adapter settings',
+    '+ New 3D character workflow (3D_CHARACTER.stylized_v2)',
+    '+ New asset validator (GLB magic + triangle budget)',
+  ],
+  why: 'ضيف دعم لـ Workflow جديدة للـ3D characters.',
+  files: '17 modified · 6 added · 0 deleted',
+  deps: 'none added · none removed',
+  migrations: 'none',
+  security: 'low — no protected control touched',
+  cost: '$0.04 (one test job on remote-gpu-01)',
+  tests: '142 passed · 3 skipped · 0 failed (static, unit, integration)',
+  risk: 'MEDIUM',
+  rollback: 'Available — revert commits on production + data backup',
+  sha: '9c41…e07b',
+};
+
+/** §28 — the exact policy diff for a CRITICAL configuration change. */
+export const POLICY_DIFF = {
+  id: 'evo_a81c02ee-4410',
+  doc: 'policy v3 → v4',
+  lines: ['add /auto_approve/0: {"tool":"studio_asset_delete","projects":["jazirat-al-mustakshif"]}'],
+  note: 'CRITICAL (security configuration): type the evolution id to confirm. Never applies to Claude Desktop; raw, critical and evolution tools can never be made automatic.',
+};
+
+export const INSTALL_STATE = {
+  current: '0.2.0',
+  previous: '0.1.0',
+  reason: 'Update 0.1.0 → 0.2.0 (Stable)',
+  backup: 'backup/update-0.1.0-to-0.2.0 (2026-09-29 12:36)',
+  health: 'healthy — health check passed 12:37',
+};
+
+export const DIAGNOSTICS = [
+  {
+    check: 'Studio Core',
+    status: 'ok',
+    tone: 'success' as Tone,
+    detail: 'running · uptime 3 h',
+    action: null as string | null,
+    security: false,
+  },
+  {
+    check: 'Godot connection',
+    status: 'error',
+    tone: 'danger' as Tone,
+    detail: 'editor reachable, plugin not connected (token mismatch)',
+    action: 'Rebuild connection config',
+    security: false,
+  },
+  {
+    check: 'MCP server',
+    status: 'ok',
+    tone: 'success' as Tone,
+    detail: 'gamedev-mcp-server 9.2.9 on 127.0.0.1:5310',
+    action: null,
+    security: false,
+  },
+  {
+    check: 'Workers',
+    status: 'warning',
+    tone: 'warning' as Tone,
+    detail: 'remote-gpu-02 QUARANTINED',
+    action: 'Owner: inspect in Workers',
+    security: true,
+  },
+  {
+    check: 'Extensions',
+    status: 'error',
+    tone: 'danger' as Tone,
+    detail: 'gpu-costs-panel 0.2.0: modified on disk',
+    action: 'Disable extension',
+    security: false,
+  },
+  {
+    check: 'Configuration',
+    status: 'ok',
+    tone: 'success' as Tone,
+    detail: 'all 8 documents valid',
+    action: null,
+    security: false,
+  },
+];

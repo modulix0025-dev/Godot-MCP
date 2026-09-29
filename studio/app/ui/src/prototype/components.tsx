@@ -58,7 +58,9 @@ export function KeyValue({ rows }: { rows: [ReactNode, ReactNode][] }) {
       {rows.map(([k, v], i) => (
         <div key={i} style={{ display: 'contents' }}>
           <dt>{k}</dt>
-          <dd>{v}</dd>
+          <dd>
+            <bdi>{v}</bdi>
+          </dd>
         </div>
       ))}
     </dl>

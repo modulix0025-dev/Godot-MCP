@@ -8,6 +8,12 @@
 > health cluster, the Developer Mode pill, Settings → AI Providers / Model routing / Developer Mode, the
 > 19-stage creation pipeline, the "Open in Claude Desktop" handoff menu, asset provenance, worker trust with
 > onboarding, approval impact (What / Why / Scope / Files / Risk / Rollback) and build profiles.
+>
+> **Extended by Execution Patch 2 (D-034…D-041).** A tenth destination, **System**, has these sections:
+> Overview (with "Ask ModuleX Agent to modify the system"), Versions (with project compatibility and
+> "Upgrade Project"), Extensions, Skills, Workflows, Providers, Updates (channel and Roll Back Update),
+> Evolution History (the owner review `vX → vY` with Approve Update / Reject / Inspect Diff, and the CRITICAL
+> policy diff with a typed confirmation), Diagnostics, and Developer Mode. Its blocked state is **Safe Mode**.
 
 This review covers:
 
@@ -28,7 +34,7 @@ cd studio && npm ci && npm run dev -w @modulex/ui
 # open http://localhost:1420/#/prototype/studio
 ```
 
-**Re-capture every screenshot** (65 images, written to `docs/modulex/ui/screens/`):
+**Re-capture every screenshot** (81 images, written to `docs/modulex/ui/screens/`):
 
 ```bash
 npm run build -w @modulex/ui && node app/ui/scripts/capture-prototype.mjs
@@ -37,9 +43,11 @@ npm run build -w @modulex/ui && node app/ui/scripts/capture-prototype.mjs
 The URL fully describes the view, for example `#/prototype/<screen>?state=<state>&theme=dark|light&lang=en|ar`.
 
 - `<screen>` is one of `projects`, `studio`, `activity`, `assets`, `test`, `builds`, `workers`, `approvals`,
-  `settings`.
+  `system`, `settings`.
 - `<state>` is one of `normal`, `empty`, `loading`, `error`, `blocked`.
 - On `settings`, `&section=ai-providers|routing|developer|…` selects the Settings section.
+- On `system`, `&section=versions|extensions|skills|workflows|providers|updates|history|diagnostics|developer`
+  selects the System section.
 
 A dashed "Prototype" bar in the corner switches state, theme and language. It is review chrome, not part of
 the product. **Ctrl+K** opens the command palette.

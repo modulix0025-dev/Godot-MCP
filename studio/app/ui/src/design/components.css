@@ -882,3 +882,17 @@ textarea {
   border-radius: var(--radius);
   background: var(--surface-2);
 }
+
+.input {
+  min-height: 30px;
+  padding: 6px var(--s-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text);
+  font: inherit;
+}
+.input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}

@@ -17,6 +17,7 @@ const en = {
     builds: 'Builds',
     workers: 'Workers',
     approvals: 'Approvals',
+    system: 'System',
     settings: 'Settings',
   },
   health: {
@@ -77,6 +78,7 @@ const ar: Strings = {
     builds: 'الإصدارات',
     workers: 'العُمّال',
     approvals: 'الموافقات',
+    system: 'النظام',
     settings: 'الإعدادات',
   },
   health: {

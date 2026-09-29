@@ -30,6 +30,14 @@ export const IconHome = (p: P) => (
     <path d="M3 9.5 10 4l7 5.5V16a1 1 0 0 1-1 1h-3.5v-4.5h-5V17H4a1 1 0 0 1-1-1z" />
   </Svg>
 );
+export const IconSystem = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="6" height="6" rx="1" />
+    <rect x="11" y="3" width="6" height="6" rx="1" />
+    <rect x="3" y="11" width="6" height="6" rx="1" />
+    <path d="M14 11v6M11 14h6" />
+  </Svg>
+);
 export const IconStudio = (p: P) => (
   <Svg {...p}>
     <rect x="3" y="4" width="14" height="12" rx="1.5" />

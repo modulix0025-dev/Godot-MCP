@@ -31,7 +31,18 @@ for (let i = 0; i < 60; i++) {
   await new Promise((r) => setTimeout(r, 250));
 }
 
-const SCREENS = ['projects', 'studio', 'activity', 'assets', 'test', 'builds', 'workers', 'approvals', 'settings'];
+const SCREENS = [
+  'projects',
+  'studio',
+  'activity',
+  'assets',
+  'test',
+  'builds',
+  'workers',
+  'approvals',
+  'system',
+  'settings',
+];
 const STATES = ['empty', 'loading', 'error', 'blocked'];
 const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {};
 const browser = await chromium.launch(launch);
@@ -65,6 +76,12 @@ for (const sec of ['ai-providers', 'routing', 'developer']) {
   await shot(`settings-${sec}-dark`, `${h('settings')}&section=${sec}`);
   await shot(`settings-${sec}-light`, `${h('settings', 'normal', 'light')}&section=${sec}`);
 }
+// Execution Patch 2: the System section.
+for (const sec of ['versions', 'extensions', 'skills', 'workflows', 'providers', 'updates', 'history', 'diagnostics']) {
+  await shot(`system-${sec}-dark`, `${h('system')}&section=${sec}`);
+}
+await shot('system-history-light', `${h('system', 'normal', 'light')}&section=history`);
+await shot('system-rtl-ar-dark', h('system', 'normal', 'dark', 'ar'));
 await shot('studio-claude-handoff-dark', h('studio'), async () => {
   await page.click('.menu > summary');
   await page.waitForTimeout(200);

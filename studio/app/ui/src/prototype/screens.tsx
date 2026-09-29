@@ -24,6 +24,18 @@ import {
   BUILDS,
   CHAT,
   CONSOLE_LINES,
+  DIAGNOSTICS,
+  EVOLUTIONS,
+  EXTENSIONS,
+  INCOMING,
+  INSTALL_STATE,
+  POLICY_DIFF,
+  PROJECT_COMPAT,
+  PROVIDER_ROWS,
+  REVIEW,
+  SKILLS,
+  VERSIONS,
+  WORKFLOW_ROWS,
   PROFILE_ROWS,
   PROJECTS,
   PROVENANCE,
@@ -1193,6 +1205,486 @@ export function SettingsScreen({
             ))}
           </Card>
           {body}
+        </div>
+      </Stateful>
+    </Page>
+  );
+}
+
+/* ---------------- System (Execution Patch 2 §31) ---------------- */
+export const SYSTEM_SECTIONS = [
+  ['overview', 'Overview'],
+  ['versions', 'Versions'],
+  ['extensions', 'Extensions'],
+  ['skills', 'Skills'],
+  ['workflows', 'Workflows'],
+  ['providers', 'Providers'],
+  ['updates', 'Updates'],
+  ['history', 'Evolution History'],
+  ['diagnostics', 'Diagnostics'],
+  ['developer', 'Developer Mode'],
+] as const;
+export type SystemSection = (typeof SYSTEM_SECTIONS)[number][0];
+
+function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="table">
+        <thead>
+          <tr>
+            {head.map((h) => (
+              <th key={h}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((c, j) => (
+                <td key={j}>{c}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** §6 — the owner review of an evolution. */
+function EvolutionReviewCard({ t }: { t: Strings }) {
+  return (
+    <Card
+      title={
+        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          ModuleX Game Studio{' '}
+          <span className="mono">
+            v{REVIEW.from} → v{REVIEW.to}
+          </span>
+        </span>
+      }
+      actions={<StatusPill tone="warning">Awaiting your approval</StatusPill>}
+    >
+      <div style={{ fontWeight: 600, marginBlockEnd: 8 }}>{REVIEW.title}</div>
+      <KeyValue
+        rows={[
+          [
+            'Changes',
+            <span className="mono" style={{ display: 'flex', flexDirection: 'column' }}>
+              {REVIEW.changes.map((c) => (
+                <span key={c}>{c}</span>
+              ))}
+            </span>,
+          ],
+          [
+            'Why',
+            <span>
+              Owner request: <bdi dir="auto">{REVIEW.why}</bdi>
+            </span>,
+          ],
+          ['Files', REVIEW.files],
+          ['Dependencies', REVIEW.deps],
+          ['Database migrations', REVIEW.migrations],
+          ['Security', REVIEW.security],
+          ['Cost', REVIEW.cost],
+          ['Tests', REVIEW.tests],
+          ['Risk', <StatusPill tone="warning">{REVIEW.risk}</StatusPill>],
+          ['Rollback', REVIEW.rollback],
+          ['Bound to diff', <span className="mono faint">sha256 {REVIEW.sha}</span>],
+        ]}
+      />
+      <div style={{ display: 'flex', gap: 8, marginBlockStart: 12 }}>
+        <button className="btn btn--primary">Approve Update</button>
+        <button className="btn">{t.reject}</button>
+        <button className="btn btn--ghost">Inspect Diff</button>
+      </div>
+    </Card>
+  );
+}
+
+function PolicyDiffCard() {
+  return (
+    <Card title={`Configuration change · ${POLICY_DIFF.doc}`} actions={<StatusPill tone="danger">CRITICAL</StatusPill>}>
+      <div className="console" style={{ height: 'auto' }}>
+        {POLICY_DIFF.lines.map((l) => (
+          <div key={l} className="console__line" style={{ color: 'var(--success)' }}>
+            + {l}
+          </div>
+        ))}
+      </div>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {POLICY_DIFF.note}
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input className="input mono" placeholder={`Type ${POLICY_DIFF.id} to confirm`} aria-label="Confirmation" />
+        <button className="btn btn--primary">Approve</button>
+        <button className="btn">Reject</button>
+      </div>
+    </Card>
+  );
+}
+
+function AskAgentCard() {
+  return (
+    <Card title="Ask ModuleX Agent to modify the system">
+      <textarea
+        className="input"
+        dir="auto"
+        rows={2}
+        style={{ width: '100%', resize: 'vertical' }}
+        defaultValue="ضيف دعم لـ Workflow جديدة للـ3D characters."
+        aria-label="Change request"
+      />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBlockStart: 8, flexWrap: 'wrap' }}>
+        <span className="faint" style={{ fontSize: 12 }}>
+          Classified as
+        </span>
+        <span className="chain__step mono">WORKFLOW</span>
+        <span className="chain__step mono">mode: extension</span>
+        <span className="chain__step mono">risk ≥ MEDIUM</span>
+        <span style={{ flex: 1 }} />
+        <button className="btn btn--primary btn--sm">Start evolution</button>
+      </div>
+      <p className="faint" style={{ fontSize: 12, marginBlockEnd: 0 }}>
+        <bdi>
+          Changes run in a sandbox first. Nothing reaches the live Studio until you approve the exact change; approval,
+          audit, backup and rollback can never be changed without you.
+        </bdi>
+      </p>
+    </Card>
+  );
+}
+
+export function SystemScreen({
+  t,
+  state,
+  section,
+  onSection,
+}: ScreenProps & { section: SystemSection; onSection: (s: SystemSection) => void }) {
+  const body = (() => {
+    switch (section) {
+      case 'versions':
+        return (
+          <>
+            <Card title="Versions">
+              <KeyValue rows={VERSIONS.map(([k, v]) => [k, <span className="mono">{v}</span>])} />
+            </Card>
+            <Card title="Project compatibility" pad={false}>
+              <Table
+                head={['Project', 'Status', 'Detail', '']}
+                rows={PROJECT_COMPAT.map((p) => [
+                  <span dir="auto">{p.name}</span>,
+                  <StatusPill tone={p.tone}>{p.status}</StatusPill>,
+                  <span className="muted">{p.note}</span>,
+                  p.status === 'Upgrade required' ? <button className="btn btn--sm">Upgrade Project</button> : null,
+                ])}
+              />
+            </Card>
+          </>
+        );
+      case 'extensions':
+        return (
+          <>
+            <Card title="Installed extensions" pad={false}>
+              <Table
+                head={['Name', 'Version', 'Kind', 'Granted permissions', 'Licence', 'Health', '']}
+                rows={EXTENSIONS.map((e) => [
+                  <span className="mono">{e.name}</span>,
+                  <span className="num">{e.version}</span>,
+                  e.kinds,
+                  <span className="faint mono" style={{ fontSize: 12 }}>
+                    {e.perms}
+                  </span>,
+                  e.license,
+                  <StatusPill tone={e.tone}>{e.enabled ? e.health : `${e.health} · disabled`}</StatusPill>,
+                  <span style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn btn--sm">Inspect</button>
+                    <button className="btn btn--sm">{e.enabled ? 'Disable' : 'Enable'}</button>
+                    {e.previous !== '—' && (
+                      <button className="btn btn--sm" title={`Roll back to ${e.previous}`}>
+                        Roll back
+                      </button>
+                    )}
+                  </span>,
+                ])}
+              />
+            </Card>
+            <Card title="Waiting in extensions/incoming">
+              {INCOMING.map((i) => (
+                <div key={i.pkg} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span className="mono">
+                    {i.pkg} {i.version}
+                  </span>
+                  <span className="faint">{i.note}</span>
+                  <span style={{ flex: 1 }} />
+                  <button className="btn btn--primary btn--sm">Inspect &amp; install</button>
+                </div>
+              ))}
+              <p className="faint" style={{ fontSize: 12, marginBlockEnd: 0 }}>
+                Extensions are declarative (Skills, workflows, provider settings, panels). Executable adapters are core
+                changes and go through the patch pipeline. High-risk permissions are never granted unless you tick them.
+              </p>
+            </Card>
+          </>
+        );
+      case 'skills':
+        return (
+          <Card title="Skill Registry" pad={false}>
+            <Table
+              head={['Name', 'Version', 'Source', 'Licence', 'Permissions', 'Tools required', 'Last update', 'Health']}
+              rows={SKILLS.map((k) => [
+                <span className="mono">{k.name}</span>,
+                <span className="num">{k.version}</span>,
+                k.source,
+                k.license,
+                <span className="faint mono">{k.perms}</span>,
+                <span className="faint mono" style={{ fontSize: 12 }}>
+                  {k.tools}
+                </span>,
+                <span className="num muted">{k.updated}</span>,
+                <StatusPill tone={k.tone}>{k.health}</StatusPill>,
+              ])}
+            />
+          </Card>
+        );
+      case 'workflows':
+        return (
+          <Card title="Workflow Registry" pad={false}>
+            <Table
+              head={[
+                'Workflow',
+                'Kind',
+                'Active',
+                'Installed',
+                'Pinned projects',
+                'Worker capability',
+                'Cost',
+                'Timeout · retries',
+              ]}
+              rows={WORKFLOW_ROWS.map((w) => [
+                <span className="mono">{w.id}</span>,
+                w.kind,
+                <span className="num">{w.active}</span>,
+                <span className="num faint">{w.versions}</span>,
+                <span dir="auto">{w.pins}</span>,
+                <span className="chain__step">{w.caps}</span>,
+                <span className="num">{w.cost}</span>,
+                <span className="num muted">{w.timeout}</span>,
+              ])}
+            />
+          </Card>
+        );
+      case 'providers':
+        return (
+          <Card title="Providers (replaceable adapters)" pad={false}>
+            <Table
+              head={['Kind', 'Provider', 'Adapter family', 'Status']}
+              rows={PROVIDER_ROWS.map((p) => [
+                p.kind,
+                <span className="mono">{p.id}</span>,
+                <span className="mono faint">{p.family}</span>,
+                <StatusPill tone={p.tone}>{p.status}</StatusPill>,
+              ])}
+            />
+          </Card>
+        );
+      case 'updates':
+        return (
+          <>
+            <Card title="Update channel">
+              <KeyValue
+                rows={[
+                  [
+                    'Channel',
+                    <div className="seg">
+                      {['Stable', 'Beta', 'Developer'].map((c) => (
+                        <button key={c} aria-pressed={c === 'Stable'}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>,
+                  ],
+                  ['Check automatically', 'Off'],
+                  ['Install automatically', 'Never — you start every update'],
+                  [
+                    'Process',
+                    'Check → Download → Verify signature + sha256 → Backup → Install → Migrate → Health check → Healthy (else roll back)',
+                  ],
+                ]}
+              />
+            </Card>
+            <Card title="Roll Back Update" actions={<StatusPill tone="success">healthy</StatusPill>}>
+              <KeyValue
+                rows={[
+                  ['Current', <span className="mono">{INSTALL_STATE.current}</span>],
+                  ['Previous', <span className="mono">{INSTALL_STATE.previous}</span>],
+                  ['Reason', INSTALL_STATE.reason],
+                  ['Backup', <span className="mono faint">{INSTALL_STATE.backup}</span>],
+                  ['Health state', INSTALL_STATE.health],
+                ]}
+              />
+              <div style={{ display: 'flex', gap: 8, marginBlockStart: 12 }}>
+                <button className="btn">Roll Back Update</button>
+              </div>
+            </Card>
+          </>
+        );
+      case 'history':
+        return (
+          <>
+            <EvolutionReviewCard t={t} />
+            <PolicyDiffCard />
+            <Card title="Evolution History" pad={false}>
+              <Table
+                head={[
+                  'Version',
+                  'Date',
+                  'Change',
+                  'Requested by',
+                  'AI/Manual',
+                  'Status',
+                  'Tests',
+                  'Approval',
+                  'Rollback',
+                ]}
+                rows={EVOLUTIONS.map((e) => [
+                  <span className="num mono">{e.version}</span>,
+                  <span className="num muted">{e.date}</span>,
+                  <span dir="auto">{e.change}</span>,
+                  e.by,
+                  e.ai,
+                  <StatusPill tone={e.tone}>{e.status}</StatusPill>,
+                  <span className="num">{e.tests}</span>,
+                  <span className="muted">{e.approval}</span>,
+                  <span className="muted">{e.rollback}</span>,
+                ])}
+              />
+            </Card>
+          </>
+        );
+      case 'diagnostics':
+        return (
+          <Card title="Diagnostics" actions={<button className="btn btn--sm">Run again</button>}>
+            {DIAGNOSTICS.map((d) => (
+              <div
+                key={d.check}
+                className="stage"
+                style={{ gridTemplateColumns: '20px 160px 1fr auto', paddingInline: 0 }}
+              >
+                <StatusDot tone={d.tone} />
+                <strong>{d.check}</strong>
+                <span className="muted">{d.detail}</span>
+                {d.action ? (
+                  <button
+                    className={`btn btn--sm${d.security ? ' btn--ghost' : ''}`}
+                    title={d.security ? 'Security: owner action only' : undefined}
+                  >
+                    {d.action}
+                  </button>
+                ) : (
+                  <span />
+                )}
+              </div>
+            ))}
+          </Card>
+        );
+      case 'developer':
+        return (
+          <Card title="Developer Mode" actions={<StatusPill tone="neutral">Off</StatusPill>}>
+            <p className="muted" style={{ marginBlockStart: 0 }}>
+              Raw Godot-MCP tools and reflection for the ModuleX Agent. Configure it in Settings → Developer Mode. Core
+              evolutions additionally need a Studio source workspace (developer installs only).
+            </p>
+          </Card>
+        );
+      default:
+        return (
+          <>
+            <div className="grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+              {[
+                ['Studio', 'v0.2.0', 'last known good', 'success'],
+                ['Channel', 'Stable', 'no automatic installs', 'neutral'],
+                ['Extensions', '3 of 4 enabled', '1 failing (disabled)', 'warning'],
+                ['Evolutions', '1 awaiting you', '3 deployed · 1 rolled back', 'warning'],
+              ].map(([k, v, sub, tone]) => (
+                <Card key={k}>
+                  <div className="section-label">{k}</div>
+                  <div style={{ fontSize: 20, fontWeight: 600, margin: '6px 0' }}>
+                    <bdi>{v}</bdi>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} className="faint">
+                    <StatusDot tone={tone as 'success'} /> <bdi>{sub}</bdi>
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <AskAgentCard />
+            <EvolutionReviewCard t={t} />
+          </>
+        );
+    }
+  })();
+  return (
+    <Page title={t.nav.system}>
+      <Stateful
+        state={state}
+        variants={{
+          empty: (
+            <EmptyState
+              title="No changes yet"
+              purpose="Extensions, Skills, workflows, providers and every change to the Studio itself are listed here with their history."
+              action={<button className="btn btn--primary">Ask ModuleX Agent to modify the system</button>}
+            />
+          ),
+          error: (
+            <ErrorState
+              title="Update 0.2.0 failed its health check"
+              evidence={[
+                'installed 0.2.0 · migrate ok',
+                'health check: Studio Core did not answer /health within 20 s',
+                'rolled back to 0.1.0 from backup/update-0.1.0-to-0.2.0',
+              ]}
+              next={<button className="btn btn--primary">Inspect logs</button>}
+              copyLabel={t.copyDiagnostics}
+            />
+          ),
+          blocked: (
+            <BlockedState
+              title="Safe Mode — started with the last known-good configuration"
+              missing={[
+                'Extension gpu-costs-panel crashed on start (disabled for this session)',
+                'Version 0.2.0 never passed its health check',
+                'Non-core extensions are disabled until you choose an action',
+              ]}
+              fix={
+                <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn--primary">Roll back to 0.1.0</button>
+                  <button className="btn">Disable extension</button>
+                  <button className="btn">Inspect logs</button>
+                  <button className="btn">Repair configuration</button>
+                  <button className="btn">Retry update</button>
+                </span>
+              }
+            />
+          ),
+        }}
+      >
+        <div className="grid" style={{ gridTemplateColumns: '220px 1fr', alignItems: 'start' }}>
+          <Card pad={false}>
+            {SYSTEM_SECTIONS.map(([id, label]) => (
+              <button
+                key={id}
+                className="stage stage--link"
+                aria-current={section === id ? 'step' : undefined}
+                onClick={() => onSection(id)}
+              >
+                <span />
+                <span>{label}</span>
+                <span />
+              </button>
+            ))}
+          </Card>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>{body}</div>
         </div>
       </Stateful>
     </Page>
