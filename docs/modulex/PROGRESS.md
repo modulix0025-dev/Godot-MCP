@@ -13,6 +13,7 @@ All work is on branch `claude/practical-hawking-whz0fm`.
 | 2 · `addons/modulex_studio` | **Done** | green; live harness 36/36 locally and on `ubuntu-latest` |
 | 3 · UI Direction Review | **Delivered and revised for Patch 1 (monochrome); STOPPED for owner approval** | GATE 3 = written owner approval: **pending** |
 | Execution Patch 1 · hardening | **Done up to the phase boundaries** (see below) | green (below) |
+| Execution Patch 2 · System Evolution | **Done up to the phase boundaries** (see below) | green (below) |
 | 4–15 | Not started as phases. Patch 1 moved the Phase 5 gateway, Phase 12 predicate and parts of Phase 13 forward as contracts and tests. Production UI still waits for GATE 3. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
@@ -179,7 +180,72 @@ verified in CI.
 
 ---
 
-## Gate output (fresh run, 2026-09-29, after Execution Patch 1)
+## Execution Patch 2: System Evolution
+
+This patch amends the plan (`EXECUTION_PROMPT.md` § Execution Patch 2). The decisions are D-034…D-041. The
+detail is in [`system-evolution.md`](system-evolution.md).
+
+### Built
+
+- **Shared contracts:**
+  - the three modes and six change kinds;
+  - an Arabic and English request classifier (Core keeps the stricter mode);
+  - risk levels with component risk floors;
+  - protected controls;
+  - the 19-stage workflow;
+  - the change proposal and owner review;
+  - the patch guard;
+  - declarative extension manifests with a permission catalogue;
+  - workflow, provider and UI-panel schemas;
+  - versioned configuration documents, where the policy can never auto-approve raw, critical or evolution
+    tools;
+  - version and project compatibility;
+  - update channels (Stable default, never automatic);
+  - migrations;
+  - Safe Mode.
+- **Core** (`studio/core/src/evolution/`):
+  - `ConfigStore`: versioned, applied live;
+  - `ExtensionRegistry`: sandbox staging, hash verification, versions kept for rollback, workflow pinning,
+    Safe Mode;
+  - `EvolutionService`: all three modes; git-worktree sandbox; risk-based gates; diff-bound owner approval;
+    typed confirmation for CRITICAL; checkpoint tag plus data backup; fast-forward deploy; health check with
+    automatic revert; verify; rollback; history; changelog from real commits only;
+  - `UpdateManager`: verify → backup → install → migrate → health → healthy, else rollback; Roll Back
+    Update;
+  - `migrateJsonFile`: backup → copy → validate → atomic replace → integrity check;
+  - `Diagnostics`: checks plus non-security repairs.
+- **MCP tools.** 24 policy-gated tools are now live (42 of 63 studio tools in total). Claude Desktop gets
+  only `studio_system_status`.
+- **Owner-only System endpoints.** The gateway reads the live policy.
+- **Hardening.** "Always allow" and policy auto-approval now apply only to the ModuleX Agent, never to
+  Claude Desktop or protected tools (D-038).
+- **Shell.** It passes `MODULEX_DATA_DIR` and retries a failed Core start in Safe Mode (`cargo check` passes
+  for Linux and Windows).
+- **UI prototype.** A new **System** destination with Overview, Versions, Extensions, Skills, Workflows,
+  Providers, Updates, Evolution History, Diagnostics and Developer Mode. It includes the owner review, the
+  CRITICAL policy diff with a typed confirmation, Roll Back Update, and Safe Mode as the blocked state.
+  81 screenshots.
+- **CI fix.** The Windows studio job had failed because `node_modules/.bin/mcpb` is a `.cmd` shim; the test
+  now runs the mcpb CLI through Node.
+
+### Evolution scenarios (§27–29)
+
+| # | Scenario | Evidence (`studio/core/tests/evolution.test.ts`) | State |
+|---|---|---|---|
+| 1 | "ضيف دعم لـ Workflow جديدة للـ3D characters." | sandbox → schema → test job on a TRUSTED worker → GLB, non-empty and provenance checks → owner approval → registry backup → install → re-hash → SUCCESS; version 1.1.0 activates while a project stays pinned to 1.0.0; no trusted worker gives BLOCKED; a bad output gives TESTS_FAILED | **PASS** (fake worker; a live run needs Phase 7) |
+| 2 | "غير سياسة الـapproval بحيث العمليات دي تبقى Auto." | exact diff `add /auto_approve/0 …`, risk CRITICAL, agent cannot approve or deploy, typed confirmation, a new versioned write, verify, `config_changed` audit, rollback as a new version; over MCP the live gateway then auto-approves for the ModuleX Agent while Claude Desktop is still asked | **PASS** |
+| 3 | "ثبت إضافة جديدة." | manifest, permissions, licence, dependencies and hashes → sandbox → validation → risk → owner approval (HIGH permission not granted unless ticked) → install → verify → update 1.1.0 → rollback to 1.0.0; tampered, forbidden-permission, non-commercial, missing-dependency and executable packages are BLOCKED before staging | **PASS** |
+| — | Core patch | real git repo: worktree sandbox, gates, review counts, hash-bound approval, checkpoint tag at the base, ff deploy, SUCCESS; failed health gives an automatic revert and ROLLED_BACK; failing tests stop before review; a patch removing an audit call is BLOCKED; protected changes are CRITICAL, owner-only, and run all 7 gates; a change after approval voids it | **PASS** |
+
+### Deviations
+
+- Extensions are declarative. Executable additions are core changes (D-036).
+- `studio_evolution_approve` submits for review and does not approve (D-037).
+- Core evolutions need `MODULEX_SOURCE_REPO`; without it they are BLOCKED (D-040).
+
+---
+
+## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 
 ```
 $ python scripts/check-runtime-boundary.py --verbose
@@ -195,22 +261,20 @@ $ cd cli && npm ci && npm run build && npm test
 $ cd studio && npm ci && npm run lint && npm run format:check && npm run build && npm run typecheck && npm test
 lint: 0 problems
 All matched files use Prettier code style!
-build: ok (incl. mcpb validate + mcpb pack → claude-desktop/dist/modulex-game-studio.mcpb)
+build: ok (mcpb validate + pack: 17 Claude Desktop tools)
 typecheck: 0 errors
- Tests  180 passed (180)   # @modulex/shared (policy, contracts, compat parity)
- Tests   48 passed (48)    # @modulex/core (security §45, server, provider, handoff, …)
+ Tests  217 passed (217)   # @modulex/shared (policy, contracts, evolution, compat parity)
+ Tests   81 passed (81)    # @modulex/core (security, server, provider, handoff, evolution scenarios)
  Tests    6 passed (6)     # @modulex/worker
- Tests    7 passed (7)     # @modulex/claude-desktop (manifest + live bridge → Core)
- Tests   55 passed (55)    # @modulex/ui (prototype incl. health, AI providers, provenance, approvals)
+ Tests    7 passed (7)     # @modulex/claude-desktop
+ Tests   65 passed (65)    # @modulex/ui (prototype incl. System section)
 $ python3 studio/branding/render-icons.py --verify
-png: [16, 20, 24, 32, 40, 48, 64, 128, 256, 512, 1024]
-ico: [16, 20, 24, 32, 40, 48, 64, 256]
 OK: every PNG size and every ICO entry present
 $ cd studio/app/src-tauri && cargo check && cargo check --target x86_64-pc-windows-msvc
 Finished (both targets)
 ```
 
-The Phase 1–3 gate output (xUnit 1450, CLI 576, studio 95) is in this file's git history.
+The earlier gate outputs are in this file's git history.
 
 ## Open risks carried forward
 
@@ -228,3 +292,8 @@ The Phase 1–3 gate output (xUnit 1450, CLI 576, studio 95) is in this file's g
    `/mcp`.
 8. **The Windows Credential Manager bridge** passes `cargo check` for the Windows target. It is exercised
    for real only by the Windows CI install and self-test, and later by manual pairing.
+9. **Live System Evolution pieces.** These still need live verification:
+   - the workflow test job (needs a TRUSTED ComfyUI worker and the Phase 7 client);
+   - the Godot and MCP diagnostics probes (Phase 4 Godot manager);
+   - the update platform steps (Tauri updater signing key and feed, Phase 13);
+   - core evolutions on a developer install (`MODULEX_SOURCE_REPO`).

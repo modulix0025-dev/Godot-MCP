@@ -475,3 +475,20 @@ This addendum re-checks the analysis against the code. The earlier sections stan
    - the ModuleX Agent codebase.
 
    "MarketX" in the patch was read as the ModuleX Game Studio UI (D-031).
+
+## ADDENDUM — Execution Patch 2: System Evolution (2026-09-29)
+
+The analysis above describes a one-shot build of the Studio. Patch 2 adds a maintenance lifecycle: the
+Studio can evolve itself after release. Checking this against the code gives three consequences.
+
+1. **Change is a first-class, audited object.** Every change to the Studio is an `EvolutionRecord`: a
+   configuration version, an extension version, or a git branch on the Studio source. Each has a proposal, a
+   test record, a diff-bound owner approval, a checkpoint, a deployment and a rollback. This reuses the
+   Patch 1 gateway, approvals, audit and redaction instead of adding a parallel mechanism.
+2. **The extension surface is declarative on purpose.** Section 3's "plugins" would have meant executable
+   code inside Core. Patch 2 requires that untrusted extensions never get unrestricted access, so
+   executable additions go through the reviewed patch pipeline instead (D-036).
+3. **New external dependencies.**
+   - A Studio source workspace is needed for core evolutions on developer installs (D-040).
+   - A live workflow test job needs a TRUSTED ComfyUI worker.
+   - The update platform steps come from the Tauri updater's signing key and feed.

@@ -727,3 +727,42 @@ The implementation trusts the code over the documents, and each deviation is rec
 - [`claude-integration.md`](claude-integration.md)
 - [`asset-provenance.md`](asset-provenance.md)
 - [`build-profiles.md`](build-profiles.md)
+
+---
+
+## EXECUTION PATCH 2: System Evolution, maintenance and extensibility (applied 2026-09-29)
+
+This patch **extends** the plan and Patch 1. It does not replace the Phase 13 update system: the Tauri
+updater with a signed manifest, disabled by default and never forced, stays; Patch 2 wraps it with channels,
+backup, health check, rollback and Safe Mode. Decisions: D-034…D-041. Details:
+[`system-evolution.md`](system-evolution.md).
+
+| Patch item | Where it lands in the phases | State |
+|---|---|---|
+| §1–2 Three modes (config / extension / core) and six change kinds | Phases 5, 12 and 13 | **Built:** `shared/evolution.ts`, `core/evolution/` |
+| §3 Controlled core workflow; no direct production self-modification | new, alongside Phase 12 | **Built:** git-worktree sandbox → gates → diff → diff-bound owner approval → checkpoint → ff-deploy → health → verify, or automatic revert |
+| §4 Sandbox (`%LOCALAPPDATA%\ModuleXGameStudio\evolution\`) | Phase 4 | **Built** |
+| §5–6 Change proposal and the owner review (What / Why / Files / Deps / Migrations / Security / Cost / Rollback / Tests / Version) | Phase 13 UI | **Built** (API + prototype) |
+| §7 Git and checkpoint strategy | Phase 4 | **Built:** `mx-evo-cp/<id>` tag + data backup; revert, never rewrite |
+| §8 Migrations | Phase 12 | **Built:** backup → copy → validate → atomic replace → integrity check |
+| §9–13 Extensions, Skills, workflows (with version pinning), providers, UI panels | Phases 7 and 13 | **Built:** declarative registry. Executable adapters are core changes (D-036). |
+| §14–16 Channels, update process, version and project compatibility | Phase 13 | **Built:** orchestration + contracts. Platform steps are the Tauri updater's (Phase 13). |
+| §17–19 AI-assisted changes, test gate, risk levels | Phase 5 | **Built:** patch guard, risk floors, gates by risk |
+| §20–22 Roll Back Update, Safe Mode, Evolution History | Phase 13 | **Built:** Core + shell retry + prototype |
+| §23 Changelog from real history | Phase 14 | **Built:** `studio_evolution_history format="changelog"`, from deployed evolutions and the real commit subjects only |
+| §24 Self-diagnostic repair | Phase 4 | **Built:** checks + non-security repairs. Godot and MCP probes arrive with the Phase 4 Godot manager. |
+| §25–26, §33 Security and the updater are never auto-modified | Phase 5 | **Built:** protected controls → CRITICAL, typed confirmation, owner-only deploy and rollback; protected tools can never be auto-approved |
+| §27–29 Three evolution scenarios | Phase 15 | **Built and tested** (the workflow test job uses a fake worker; a live run needs Phase 7) |
+| §30 MCP tools | Phase 6 | **Built:** 24 policy-gated tools |
+| §31 System UI section | Phase 13 | **Prototype built** (waits for the Phase 3 decision) |
+| §32 "Ask ModuleX Agent to modify the system" | Phases 6 and 13 | **Built:** classification (Core keeps the stricter mode) + prototype composer |
+
+**Rules added by this patch:**
+
+1. Nothing reaches the live installation before the owner approves the **exact** change (hash-bound).
+2. The ModuleX Agent never overwrites production source, disables security, changes credentials or policy
+   silently, removes audit logging, disables backups or rollback, or removes tests because they fail. The
+   patch guard enforces the last three.
+3. Approval, audit, backup, rollback and the updater are protected controls. Changing them is always
+   CRITICAL and owner-deployed.
+4. Updates are never automatic. Stable is the default channel.

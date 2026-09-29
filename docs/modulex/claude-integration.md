@@ -99,7 +99,7 @@ so it can never list a tool the gateway would refuse. It has two `user_config` f
 - It refuses a non-loopback `core_url`.
 - If Core is down, it returns `STUDIO_UNAVAILABLE` and reconnects on the next call.
 
-**The tools Claude Desktop sees.** 16 are live:
+**The tools Claude Desktop sees.** 17 are live:
 
 - `studio_ping`;
 - `studio_project_list`, `studio_project_status`;
@@ -111,7 +111,10 @@ so it can never list a tool the gateway would refuse. It has two `user_config` f
 - `studio_build_status`;
 - `studio_worker_status`;
 - `studio_approval_list`;
-- `studio_approval_action` (**withdraw only**).
+- `studio_approval_action` (**withdraw only**);
+- `studio_system_status` (read-only versions and System summary, Execution Patch 2).
+
+Claude Desktop gets **none** of the System Evolution, extension, config or repair tools (D-038).
 
 Three more are declared for Claude Desktop and appear automatically once they are implemented:
 `studio_asset_generate`, `studio_test_run`, and `studio_build` / `studio_export`.

@@ -544,3 +544,93 @@ are in `build-profiles.md` §1.
 - Settings are validated before the request is sent.
 - Server-side refusal fallback (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) is on by
   default.
+
+---
+
+# Execution Patch 2: System Evolution (2026-09-29)
+
+## D-034 · Three modes with a single lifecycle (DECIDED, built)
+
+Config, extension and core changes share one `EvolutionRecord` and history, one owner-review format and one
+audit trail. The difference is where a change lands:
+
+- a config version;
+- an extension version;
+- a git branch on the Studio source.
+
+**Classification.** The ModuleX Agent's classification is honoured only when it is at least as controlled as
+Core's keyword classifier (Arabic and English). An unknown request routes to core.
+
+## D-035 · Approval is bound to the exact change (DECIDED, built)
+
+The review carries `diff_sha256`, computed over one of:
+
+- the git diff (core);
+- the JSON config diff plus the base version (config);
+- the manifest, permissions and file hashes (extension).
+
+`decide` and `deploy` recompute the hash. A change after approval voids the approval (tested by committing
+into the sandbox after approval). CRITICAL and protected changes also require the owner to type the
+evolution id.
+
+## D-036 · Extensions are declarative; executable code is a core change (DECIDED)
+
+Core never loads extension JavaScript, and the UI never renders remote code.
+
+**Declarative extension kinds:**
+
+- Skills (Markdown);
+- workflows (JSON plus graph);
+- providers (configuration of built-in adapter families: `anthropic`, `openai-compatible-http`,
+  `comfyui-http`, `local-build`, `filesystem-storage`);
+- UI panels (JSON blocks bound to `studio_*` read tools).
+
+**What goes through Mode C instead.** Build adapters, exporters, asset processors, MCP adapters and new
+adapter families all need executable code. They go through Mode C, so the code is reviewed as a diff,
+tested and approved.
+
+**Why.** An in-process plugin runtime cannot be sandboxed well enough to honour "untrusted extensions must
+never receive unrestricted access". The patch pipeline can.
+
+## D-037 · Agent deployment limits (DECIDED, built)
+
+The ModuleX Agent may deploy only **owner-approved LOW/MEDIUM evolutions that touch no protected
+control**. HIGH, CRITICAL and protected evolutions are deployed and rolled back by the owner. This covers
+the updater, rollback and compatibility controls, as §26 requires.
+
+`studio_evolution_approve` **submits** an evolution for owner review. The name comes from the patch; it
+cannot approve anything (consistent with D-027).
+
+## D-038 · Claude Desktop and System Evolution (DECIDED)
+
+Claude Desktop receives only `studio_system_status`, the read-only summary. It receives none of the
+evolution, extension, config or repair tools.
+
+The hardening is in `decide`: "always allow" and policy auto-approval now apply **only** to the ModuleX
+Agent, and never to protected tools. Before Patch 2, an `alwaysAllow` entry would also have let Claude
+Desktop skip approval at the policy level. The UI never offered this, but the code allowed it; it is now
+closed and tested.
+
+## D-039 · Configuration is versioned, never overwritten (DECIDED, built)
+
+`ConfigStore` keeps every version. A rollback writes the old value again as a **new** version. A write
+fails if the document changed since the proposal (the stale-approval test). The gateway reads the policy
+live; an invalid policy document falls back to the defaults and never loosens anything.
+
+## D-040 · Core evolutions need a source workspace (DECIDED; BLOCKED on non-developer installs)
+
+A core change needs the Studio source: `MODULEX_SOURCE_REPO`, a git checkout whose checked-out branch is the
+production branch. Installed end-user copies have no source tree. For them, a verified evolution branch
+ships as a normal signed release through the update pipeline (Phase 13). Without a source workspace, core
+evolutions report BLOCKED honestly, while config and extension evolutions work.
+
+## D-041 · Deferred and live-only items (OPEN)
+
+- **§23 changelog generation: built after all.** `EvolutionService.changelog()` (exposed as
+  `studio_evolution_history format="changelog"`) lists only deployed evolutions, and for core changes only
+  the commit subjects captured at deploy time. Rolled-back changes are marked as such.
+- **Live pieces.** The live workflow test job needs a TRUSTED ComfyUI worker and the Phase 7 client (tests
+  use a fake worker). The Godot and MCP diagnostics probes need the Phase 4 Godot manager. The update
+  platform steps (download, signature, install, restore) are the Tauri updater's (Phase 13).
+- **Production UI.** The production System screens wait for the Phase 3 UI decision; the prototype covers
+  every section.

@@ -16,7 +16,7 @@ Sources of truth:
 
 | Layer | Tools | Who sees them |
 |---|---|---|
-| **A · Agent-safe** (default) | `studio_*`: 39 declared, **18 live** | The ModuleX Agent (by role), Claude Desktop (a 16-tool subset) and the owner UI |
+| **A · Agent-safe** (default) | `studio_*`: 63 declared, **42 live** (24 are System Evolution tools) | The ModuleX Agent (by role), Claude Desktop (a 17-tool subset) and the owner UI |
 | **B · Raw Godot-MCP** | 54 ids (`node-*`, `scene-*`, `script-*`, `resource-*`, `reflection-*`, `game-*`, …) | Studio Core internally. The ModuleX Agent sees them **only in Developer Mode**. Claude Desktop **never** sees them. |
 
 Agents never receive the Godot-MCP server URL or token. Every raw call goes through Core's gateway.
@@ -33,7 +33,7 @@ called directly. So the **Policy Gateway is the only enforcement point**, and hi
 | read | allow (role-scoped) | allow (its subset) | allow |
 | write | allow if the role owns it | only the subset (currently `studio_game_create`) | allow |
 | cost | ask above the threshold ($0.25 default) or when the cost is unknown | ask | allow |
-| destructive | **ask** (unless the owner chose "always allow for this project") | **ask, always.** "Always allow" is never offered. | allow |
+| destructive | **ask** (unless the owner chose "always allow for this project", or the live policy auto-approves it) | **ask, always.** "Always allow" and policy auto-approval never apply (enforced in `decide`). | allow |
 | critical (`studio_policy_change`, `studio_secret_set`, `studio_worker_register`, `studio_project_delete`) | **deny** | **deny** | ask (a confirmation) |
 | raw layer | **deny** unless Developer Mode `raw-tools` is on; destructive raw tools still ask | **deny, always** | — |
 | `reflection-method-call` | **deny** unless Developer Mode `reflection` is on; then **ask on every call** | **deny, always** | — |
@@ -162,7 +162,37 @@ The trust levels are TRUSTED, DEGRADED, UNTRUSTED, QUARANTINED and OFFLINE.
 
 See [`claude-integration.md`](claude-integration.md).
 
-## 10. Test coverage (Patch 1 §45)
+## 10. System Evolution (Execution Patch 2)
+
+The Studio can change itself, but only through [System Evolution](system-evolution.md):
+
+- a sandbox first;
+- tests by risk;
+- the exact diff shown to the owner;
+- approval bound to the diff hash, which only the owner UI can give;
+- a checkpoint;
+- a health check with automatic revert;
+- an audit event for every transition.
+
+**Protected controls** are the policy gateway, approvals, audit, credentials, auth and network exposure,
+worker authentication, the sandbox, backup and rollback, the updater, the evolution engine, the schema and
+signing. A change that touches one is CRITICAL. It needs a typed confirmation, and only the owner can deploy
+or roll it back.
+
+A **patch guard** blocks any diff that:
+
+- deletes or skips tests;
+- removes audit calls;
+- hard-codes a credential;
+- binds `0.0.0.0`.
+
+The evolution, extension, config and repair tools are **protected tools**. Neither "always allow" nor the
+policy document can make them automatic. Security repairs are never applied by a tool.
+
+Extensions are declarative. Forbidden permissions (`secrets:read`, `fs:outside-project`, `policy:modify`,
+`process:execute`) make a manifest invalid, and HIGH permissions are granted only when the owner ticks them.
+
+## 11. Test coverage (Patch 1 §45)
 
 | Requirement | Test |
 |---|---|

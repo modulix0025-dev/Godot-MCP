@@ -276,6 +276,15 @@ families. The plan and the evidence are in `docs/modulex/`: `ANALYSIS.md`, `EXEC
       there first.
   - `studio/claude-desktop/` builds the Claude Desktop MCPB extension. Its manifest is generated from
     `advertisedTools('claude-desktop')`, so never hand-edit a tool list.
+  - System Evolution (Execution Patch 2, `docs/modulex/system-evolution.md`):
+    - Changes to the Studio itself go through `studio/core/src/evolution/`: config versions, declarative
+      extensions, or a git-worktree patch.
+    - Every change needs a diff-bound owner approval, a checkpoint, a health check and a rollback path.
+    - Protected controls (see `COMPONENTS` in `studio/shared/src/evolution.ts`) are CRITICAL and
+      owner-deployed.
+    - `patchGuard` blocks diffs that delete or skip tests or remove `audit.append` calls, so never do either.
+    - Keep `STUDIO_VERSIONS` (`studio/core/src/version.ts`) in step with `studio/compat.json`; a test enforces
+      it.
   - Icons: edit the SVG masters via `studio/branding/generate-icons.py`, then run `render-icons.py`. CI runs
     `--verify`. The identity is monochrome: colour only for semantic state.
 
