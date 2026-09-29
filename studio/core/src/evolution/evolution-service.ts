@@ -86,6 +86,8 @@ export interface EvolutionRecord {
     backup: Backup | null;
     health: { ok: boolean; detail: string } | null;
     verified: boolean;
+    /** Commit subjects actually deployed (core only) — the changelog's only source for code changes. */
+    commits?: string[];
   } | null;
   rollback: { at: string; by: string; reason: string } | null;
   problems: string[];
@@ -196,6 +198,35 @@ export class EvolutionService {
         approval: r.approval ? `owner ${r.approval.at}` : r.status === 'REJECTED' ? 'rejected' : '—',
         rollback: r.rollback ? `rolled back ${r.rollback.at}` : r.deployment ? 'available' : '—',
       }));
+  }
+
+  /**
+   * §23 — changelog built ONLY from what actually happened: verified evolutions and the commit subjects that were
+   * deployed. Rolled-back and rejected changes are listed as such; nothing is summarised or invented.
+   */
+  changelog(): string {
+    const byVersion = new Map<string, string[]>();
+    const recs = [...this.records.values()]
+      .filter((r) => r.deployment && (r.status === 'SUCCESS' || r.status === 'ROLLED_BACK'))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    for (const r of recs) {
+      const v = r.proposal.target_version;
+      const lines = byVersion.get(v) ?? [];
+      const tag = r.status === 'ROLLED_BACK' ? ' (rolled back)' : '';
+      const who = r.proposal.authored_by === 'ai' ? 'ModuleX Agent' : 'owner';
+      if (r.config)
+        lines.push(`- config ${r.config.doc}: ${r.config.diff.length} change(s)${tag} [${r.evolution_id}, ${who}]`);
+      else if (r.extension)
+        lines.push(
+          `- extension ${r.extension.name} ${r.extension.is_update_of ? `${r.extension.is_update_of} → ` : ''}${r.extension.version}${tag} [${r.evolution_id}, ${who}]`,
+        );
+      else for (const c of r.deployment!.commits ?? []) lines.push(`- ${c}${tag} [${r.evolution_id}, ${who}]`);
+      byVersion.set(v, lines);
+    }
+    return [...byVersion.entries()]
+      .sort(([a], [b]) => (a === b ? 0 : a < b ? 1 : -1))
+      .map(([v, lines]) => `## ${v}\n${lines.join('\n')}`)
+      .join('\n\n');
   }
 
   // ================================================================ proposals (all modes)
@@ -1010,6 +1041,9 @@ export class EvolutionService {
       this.stage(r, 'deploy', 'blocked', r.problems[r.problems.length - 1]!);
       return;
     }
+    r.deployment.commits = git(src.repo, ['log', '--format=%h %s', `${c.base_commit}..${c.branch}`])
+      .split('\n')
+      .filter(Boolean);
     git(src.repo, ['merge', '--ff-only', '-q', c.branch]);
     this.stage(r, 'deploy', 'done', `${src.productionBranch} fast-forwarded to ${gitHead(src.repo).slice(0, 10)}`);
     this.o.audit.append('evolution_deployed', 'owner-ui', { evolution_id: r.evolution_id, commit: gitHead(src.repo) });

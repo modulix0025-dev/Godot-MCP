@@ -560,7 +560,13 @@ describe('§3 core evolution — sandbox → tests → diff → owner approval �
     ] as const)
       expect(audit.list({ type: t }).length, t).toBeGreaterThan(0);
 
+    // §23: the changelog comes only from what was deployed (the real commit subject), never invented.
+    expect(sys.evolution.changelog()).toMatch(
+      /^## 0\.2\.0\n- [0-9a-f]{7,} Add a new dashboard section for GPU costs\. \[evo_[a-z0-9-]+, ModuleX Agent\]$/,
+    );
+
     sys.evolution.rollback(r.evolution_id, 'modulex-agent', 'owner prefers the old dashboard');
+    expect(sys.evolution.changelog()).toContain('(rolled back)');
     expect(readFileSync(join(repo, 'studio/app/ui/src/dashboard.ts'), 'utf-8')).not.toContain('gpu-costs');
     expect(git(repo, ['log', '--format=%s', '-1']).trim()).toMatch(/^Revert/);
     expect(git(repo, ['merge-base', '--is-ancestor', base, 'HEAD']) === '').toBe(true); // base still in history

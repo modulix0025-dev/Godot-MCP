@@ -305,11 +305,14 @@ export function evolutionHandlers(): ToolHandler[] {
       title: 'Evolution / History',
       description: footer(
         'studio_evolution_history',
-        'Evolution History: version, date, change, requester, AI/manual, status, tests, approval, rollback. Changes nothing.',
+        'Evolution History: version, date, change, requester, AI/manual, status, tests, approval, rollback. format="changelog" returns a Markdown changelog generated ONLY from deployed evolutions and the commit subjects actually deployed — never invent or embellish entries. Changes nothing.\nArgs: format? (rows | changelog).',
       ),
-      input: z.object({}),
+      input: z.object({ format: z.enum(['rows', 'changelog']).optional() }),
       annotations: RO,
-      run: async (_a, ctx) => ({ status: 'SUCCESS', data: sys(ctx).evolution.history() }),
+      run: async (a, ctx) => ({
+        status: 'SUCCESS',
+        data: a.format === 'changelog' ? { changelog: sys(ctx).evolution.changelog() } : sys(ctx).evolution.history(),
+      }),
     },
     {
       id: 'studio_extension_list',
@@ -336,14 +339,12 @@ export function evolutionHandlers(): ToolHandler[] {
               enabled: w.enabled,
               worker_capabilities: w.definition.worker_capabilities,
             })),
-            providers: x
-              .providers()
-              .map((p) => ({
-                id: p.definition.id,
-                kind: p.definition.kind,
-                family: p.definition.family,
-                enabled: p.enabled,
-              })),
+            providers: x.providers().map((p) => ({
+              id: p.definition.id,
+              kind: p.definition.kind,
+              family: p.definition.family,
+              enabled: p.enabled,
+            })),
             incoming: x.incoming(),
           },
         };
