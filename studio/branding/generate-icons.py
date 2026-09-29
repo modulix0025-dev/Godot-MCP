@@ -5,8 +5,9 @@ Geometry: an isometric cube (regular hexagon, pointy-top). In isometric projecti
 UL->LR and LL->UR are straight lines through the centre, so carving them out as a channel leaves an X of
 negative space that splits the cube into four modules: the top face, the left and right wedges, and the
 front-bottom module. The front-bottom module is offset downward ("assembly in progress") and filled with
-ModuleX Cobalt; the X channel shows the cobalt edge. Small sizes are hand-simplified: wider channel, no
-offset, no highlight stroke.
+a light module; the X channel is white. Monochrome by design (Execution Patch 1 §3-5): black, white and
+greys only. Small sizes are hand-simplified: wider channel, no offset, no highlight stroke, lighter side faces
+so the silhouette survives on dark taskbars.
 
     python generate-icons.py      # rewrites icon.svg, icon-24.svg, icon-16.svg
 """
@@ -46,21 +47,21 @@ def pts(poly, dy=0.0):
     return " ".join(f"{x:.1f},{y + dy:.1f}" for x, y in poly)
 
 
-def build(label, gap, offset, channel, highlight, rim, sides=("#12151C", "#1C2130")):
+def build(label, gap, offset, channel, highlight, rim, sides=("#171717", "#262626"), bottom="url(#mxLight)", top="url(#mxTop)"):
     mods = {
         "left": [UL, C, LL],
         "right": [C, UR, LR],
         "top": [UL, TOP, UR, C],
         "bottom": [LL, C, LR, BOT],
     }
-    fills = {"left": sides[0], "right": sides[1], "top": "url(#mxTop)", "bottom": "url(#mxCobalt)"}
+    fills = {"left": sides[0], "right": sides[1], "top": top, "bottom": bottom}
     body = []
     # Slate rim: keeps the ink silhouette legible on dark taskbars / dark-theme UIs.
     rim_poly = inset([TOP, UR, LR, BOT, LL, UL], rim / 2)
-    body.append(f'<polygon points="{pts(rim_poly)}" fill="#3A4466"/>')
-    # Cobalt X channel, visible through the module gaps.
+    body.append(f'<polygon points="{pts(rim_poly)}" fill="#707070"/>')
+    # White X channel, visible through the module gaps.
     body.append(
-        f'<g stroke="#4C6FFF" stroke-width="{channel}" stroke-linecap="butt">'
+        f'<g stroke="#FFFFFF" stroke-width="{channel}" stroke-linecap="butt">'
         f'<line x1="{UL[0]:.1f}" y1="{UL[1]:.1f}" x2="{LR[0]:.1f}" y2="{LR[1]:.1f}"/>'
         f'<line x1="{LL[0]:.1f}" y1="{LL[1]:.1f}" x2="{UR[0]:.1f}" y2="{UR[1]:.1f}"/></g>'
     )
@@ -70,7 +71,7 @@ def build(label, gap, offset, channel, highlight, rim, sides=("#12151C", "#1C213
     if highlight:
         a, b, c, _ = inset(mods["top"], gap)
         body.append(
-            f'<polyline points="{pts([a, b, c])}" fill="none" stroke="#8FA5FF" stroke-width="10" '
+            f'<polyline points="{pts([a, b, c])}" fill="none" stroke="#CCCCCC" stroke-width="10" '
             'stroke-linejoin="round" stroke-linecap="round"/>'
         )
     # Clip everything to the cube silhouette (+ the offset module) so the channel never overshoots.
@@ -78,9 +79,9 @@ def build(label, gap, offset, channel, highlight, rim, sides=("#12151C", "#1C213
     defs = (
         "<defs>"
         '<linearGradient id="mxTop" x1="0" y1="0" x2="0" y2="1">'
-        '<stop offset="0" stop-color="#2E3858"/><stop offset="1" stop-color="#1C2130"/></linearGradient>'
-        '<linearGradient id="mxCobalt" x1="0" y1="0" x2="1" y2="1">'
-        '<stop offset="0" stop-color="#5A7BFF"/><stop offset="1" stop-color="#3552E0"/></linearGradient>'
+        '<stop offset="0" stop-color="#444444"/><stop offset="1" stop-color="#2D2D2D"/></linearGradient>'
+        '<linearGradient id="mxLight" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0" stop-color="#F5F5F5"/><stop offset="1" stop-color="#CCCCCC"/></linearGradient>'
         f"{clip}</defs>"
     )
     return (
@@ -94,6 +95,6 @@ if __name__ == "__main__":
     with open("icon.svg", "w") as f:
         f.write(build("master", gap=16, offset=22, channel=40, highlight=True, rim=0))
     with open("icon-24.svg", "w") as f:
-        f.write(build("24 px", gap=34, offset=0, channel=80, highlight=False, rim=0, sides=("#232A3C", "#2C3550")))
+        f.write(build("24 px", gap=34, offset=0, channel=80, highlight=False, rim=0, sides=("#2E2E2E", "#3C3C3C")))
     with open("icon-16.svg", "w") as f:
-        f.write(build("16 px", gap=44, offset=0, channel=100, highlight=False, rim=0, sides=("#2A3246", "#343E5C")))
+        f.write(build("16 px", gap=40, offset=0, channel=150, highlight=False, rim=0, sides=("#292929", "#292929"), bottom="#292929", top="#292929"))

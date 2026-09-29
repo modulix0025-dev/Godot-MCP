@@ -2,6 +2,12 @@
 
 > **Status: waiting for owner approval.** No production screens will be built until the owner approves or
 > adjusts this direction; the decision is recorded in [`../DECISIONS.md`](../DECISIONS.md) (D-022).
+>
+> **Revised by Execution Patch 1 (D-029).** The identity is now **monochrome**: black, white and greys only,
+> with colour reserved for semantic state. The Cobalt accent is gone. The prototype also gained the six-signal
+> health cluster, the Developer Mode pill, Settings → AI Providers / Model routing / Developer Mode, the
+> 19-stage creation pipeline, the "Open in Claude Desktop" handoff menu, asset provenance, worker trust with
+> onboarding, approval impact (What / Why / Scope / Files / Risk / Rollback) and build profiles.
 
 This review covers:
 
@@ -22,7 +28,7 @@ cd studio && npm ci && npm run dev -w @modulex/ui
 # open http://localhost:1420/#/prototype/studio
 ```
 
-**Re-capture every screenshot** (58 images, written to `docs/modulex/ui/screens/`):
+**Re-capture every screenshot** (65 images, written to `docs/modulex/ui/screens/`):
 
 ```bash
 npm run build -w @modulex/ui && node app/ui/scripts/capture-prototype.mjs
@@ -33,6 +39,7 @@ The URL fully describes the view, for example `#/prototype/<screen>?state=<state
 - `<screen>` is one of `projects`, `studio`, `activity`, `assets`, `test`, `builds`, `workers`, `approvals`,
   `settings`.
 - `<state>` is one of `normal`, `empty`, `loading`, `error`, `blocked`.
+- On `settings`, `&section=ai-providers|routing|developer|…` selects the Settings section.
 
 A dashed "Prototype" bar in the corner switches state, theme and language. It is review chrome, not part of
 the product. **Ctrl+K** opens the command palette.
@@ -59,7 +66,9 @@ Everything except Workers and Settings is project-scoped.
 
 - the wordmark;
 - the **project switcher**;
-- the **connection-health cluster** (Agent · Godot 4.5.1 · MCP · GPU workers);
+- the **connection-health cluster**: Agent · Godot · MCP · ComfyUI · Build Workers · Claude. Each is a compact
+  dot with the detail in its tooltip;
+- the **Developer Mode pill** ("Dev mode · off"), which opens Settings → Developer Mode;
 - the **budget meter** (spend / cap);
 - the **Approvals** shortcut;
 - **Ctrl+K**.
@@ -216,10 +225,11 @@ if a navigation label is missing in either.
 
 **Colour tokens** live in `studio/app/ui/src/design/tokens.css`, and components read only these variables.
 
-- **Ink scale:** `#0B0D12` → `#F5F7FA` (10 steps).
-- **Brand accent:** ModuleX Cobalt `#4C6FFF`. `#3552E0` is used for the light theme and hover; `#8FA5FF` is
-  the highlight.
-- **Semantic colours:**
+- **Identity: monochrome** (Execution Patch 1 §2). There is no brand hue. Emphasis is contrast: near-white
+  on ink in the dark theme, ink on white in the light theme. The primary button is `#F5F6F7` on ink (dark) or
+  ink on white (light).
+- **Ink scale:** pure greys with no blue cast, `#0B0C0E` → `#F5F6F7` (10 steps).
+- **Semantic colours — the only colours in the product:**
   - success `#2FB67C`
   - warning `#E5A13A`
   - danger `#E5484D`
@@ -288,7 +298,7 @@ on a dark one.
 
 | Concept | Idea | Assessment |
 |---|---|---|
-| **A · Module Keystone** | An isometric cube. Its two long diagonals are carved out as an X of negative space, splitting it into four modules; the cobalt front module is offset ("assembly in progress"). | **Recommended.** It says modular, 3D and building, it is distinctive, and it is legible from 24 px up on light and dark. **The trade-off is 16 px:** the hand-simplified master reads as a cobalt gem-with-X, softer than B. It needs pixel-level hinting at 16 px after approval. |
+| **A · Module Keystone** | An isometric cube. Its two long diagonals are carved out as an X of negative space, splitting it into four modules; the front module is offset ("assembly in progress"). Rendered in greys only. | **Recommended.** It says modular, 3D and building, it is distinctive, and it is legible from 24 px up on light and dark. **The trade-off is 16 px:** the hand-simplified master reads as a gem-with-X, softer than B. The 16 and 20 px renders are now pixel-hinted to a four-tone palette. |
 | B · Forge X | Two chevrons forming an X around a spark. | The crispest at 16 px, but it reads as a generic "AI spark" or close button. It is not distinctive. |
 | C · Stage Frame | A viewport frame with a play cursor. | It reads as a media player; "ModuleX" is lost. |
 | D · Node Graph X | Four connected nodes in an X. | It looks like many developer tools and loses its nodes below 24 px. |
@@ -302,8 +312,9 @@ The icon files are:
 - `studio/branding/icon.svg` (master);
 - `icon-24.svg` and `icon-16.svg`: hand-simplified, with a wider channel and no offset;
 - `generate-icons.py`: regenerates the three masters;
-- `build-ico.py`: builds and verifies the Windows multi-resolution `.ico` (16, 20, 24, 32, 40, 48, 64, 256).
-  The 16/20/24 entries use the hand-tuned masters. The ICO check runs in CI.
+- `render-icons.py`: renders `png/icon-{16,20,24,32,40,48,64,128,256,512,1024}.png`, pixel-hints 16 and
+  20 px, writes the Windows multi-resolution `.ico` (16, 20, 24, 32, 40, 48, 64, 256) and the Tauri icons.
+  `--verify` checks every PNG size and every ICO entry, and runs in CI. (It replaces `build-ico.py`.)
 - `concepts/`: A–D.
 
 ## 7. What I am asking the owner
@@ -312,11 +323,13 @@ Please **approve or adjust** each item:
 
 1. **Navigation:** the 9-destination rail and the top-bar contents.
 2. **The Studio workspace:** the three-pane layout, the inline proposal cards, and the pinned context chip.
-3. **The visual language:** dark as the default theme, the Cobalt accent, the density (13 px base), and the
-   four state treatments.
+3. **The visual language:** dark as the default theme, the monochrome identity (colour only for state), the
+   density (13 px base), and the four state treatments.
 4. **Arabic:** full RTL mirroring, with code and logs kept left-to-right.
-5. **The icon: concept A.** Also: should the 16 px size favour a simplified "X-gem" (as now) or borrow B's
-   crisper chevrons at 16 px only?
+5. **The icon: concept A, monochrome.** Also: should the 16 px size favour a simplified "X-gem" (as now) or
+   borrow B's crisper chevrons at 16 px only?
+6. **The Patch 1 surfaces:** the health cluster, the Developer Mode pill and dialog, the AI Providers cards,
+   provenance, worker trust and approval impact.
 
 Any change requested here is applied to the tokens and components before Phase 13 builds the production
 screens. Until approval, `App.tsx` renders only a placeholder plus the prototype route.

@@ -13,7 +13,8 @@ import '@fontsource/ibm-plex-sans-arabic/400.css';
 import '@fontsource/ibm-plex-sans-arabic/500.css';
 import '@fontsource/ibm-plex-sans-arabic/600.css';
 import { StatusDot } from './components';
-import { STRINGS, type Lang } from './i18n';
+import { STRINGS, type Lang, type Strings } from './i18n';
+import type { Tone } from './data';
 import {
   IconActivity,
   IconApprovals,
@@ -33,11 +34,13 @@ import {
   AssetsScreen,
   BuildsScreen,
   ProjectsScreen,
+  SETTINGS_SECTIONS,
   SettingsScreen,
   StudioScreen,
   TestScreen,
   WorkersScreen,
   type ScreenProps,
+  type SettingsSection,
   type ViewState,
 } from './screens';
 
@@ -67,12 +70,25 @@ const ICONS: Record<ScreenId, ComponentType<{ size?: number }>> = {
   settings: IconSettings,
 };
 
+/** Top-bar health cluster (Execution Patch 1 §27): compact dots, detail on hover. */
+const HEALTH: [keyof Strings['health'], Tone, string][] = [
+  ['agent', 'success', 'ModuleX Agent connected · studio MCP 127.0.0.1:47821'],
+  ['godot', 'success', 'Godot 4.5.1 mono editor running · addon godot_mcp + modulex_studio'],
+  ['mcp', 'success', 'gamedev-mcp-server 9.2.9 · token auth · 54 raw tools (Developer Mode only)'],
+  ['comfyui', 'warning', '1 TRUSTED · 1 QUARANTINED · 1 onboarding'],
+  ['buildWorkers', 'neutral', 'No macOS worker — iOS release BLOCKED'],
+  ['claude', 'success', 'Claude API ok · Claude Desktop paired (health test 13:50)'],
+];
+
 export interface Route {
   screen: ScreenId;
   state: ViewState;
   theme: 'dark' | 'light';
   lang: Lang;
+  section: SettingsSection;
 }
+
+const SECTION_IDS = SETTINGS_SECTIONS.map(([id]) => id) as SettingsSection[];
 
 export function parseRoute(hash: string): Route {
   const [path = '', query = ''] = hash.replace(/^#\/?/, '').split('?');
@@ -84,11 +100,15 @@ export function parseRoute(hash: string): Route {
     state: VIEW_STATES.includes(state) ? state : 'normal',
     theme: q.get('theme') === 'light' ? 'light' : 'dark',
     lang: q.get('lang') === 'ar' ? 'ar' : 'en',
+    section: SECTION_IDS.includes(q.get('section') as SettingsSection)
+      ? (q.get('section') as SettingsSection)
+      : 'appearance',
   };
 }
 
 export function routeToHash(r: Route): string {
-  return `#/prototype/${r.screen}?state=${r.state}&theme=${r.theme}&lang=${r.lang}`;
+  const section = r.screen === 'settings' && r.section !== 'appearance' ? `&section=${r.section}` : '';
+  return `#/prototype/${r.screen}?state=${r.state}&theme=${r.theme}&lang=${r.lang}${section}`;
 }
 
 export function Prototype() {
@@ -154,6 +174,8 @@ export function Prototype() {
             lang={route.lang}
             onTheme={(theme) => go({ theme })}
             onLang={(lang) => go({ lang })}
+            section={route.section}
+            onSection={(section) => go({ section })}
           />
         );
     }
@@ -205,19 +227,19 @@ export function Prototype() {
         </button>
         <span className="mx-topbar__grow" />
         <div className="health" aria-label="Connection health">
-          <span className="health__item">
-            <StatusDot tone="success" /> {t.health.agent}
-          </span>
-          <span className="health__item">
-            <StatusDot tone="success" /> {t.health.godot}
-          </span>
-          <span className="health__item">
-            <StatusDot tone="success" /> {t.health.mcp}
-          </span>
-          <span className="health__item">
-            <StatusDot tone="warning" /> {t.health.gpu}
-          </span>
+          {HEALTH.map(([key, tone, tip]) => (
+            <span key={key} className="health__item" title={tip}>
+              <StatusDot tone={tone} /> {t.health[key]}
+            </span>
+          ))}
         </div>
+        <button
+          className="pill tone-neutral dev-pill"
+          title="Developer Mode is off — agents see only Agent-safe studio_* tools"
+          onClick={() => go({ screen: 'settings', section: 'developer' })}
+        >
+          Dev mode · off
+        </button>
         <div className="budget num" title={t.budget}>
           <span>$3.20 / $50</span>
           <div className="meter">
@@ -247,7 +269,7 @@ export function Prototype() {
       )}
 
       <div className="proto-bar" role="toolbar" aria-label="Prototype review controls">
-        <strong style={{ color: 'var(--cobalt-soft)' }}>Prototype</strong>
+        <strong className="muted">Prototype</strong>
         <div className="seg">
           {VIEW_STATES.map((s) => (
             <button key={s} aria-pressed={route.state === s} onClick={() => go({ state: s })}>

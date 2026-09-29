@@ -222,7 +222,7 @@ textarea {
 }
 
 .btn--primary:hover {
-  background: var(--cobalt-strong);
+  background: var(--accent-hover);
 }
 
 .btn--danger {
@@ -794,7 +794,7 @@ textarea {
   padding: 6px;
   border-radius: 8px;
   background: var(--surface-1);
-  border: 1px dashed var(--cobalt-soft);
+  border: 1px dashed var(--text-3);
   box-shadow: var(--overlay-shadow);
   font-size: var(--fs-12);
 }
@@ -811,4 +811,74 @@ textarea {
 .state__evidence .console__line {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ---------- Execution Patch 1 additions ---------- */
+.stage--link {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.stage--link:hover {
+  background: var(--surface-2);
+}
+.stage--link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.dev-pill {
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-12);
+}
+
+.menu {
+  position: relative;
+}
+.menu > summary {
+  list-style: none;
+}
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+.menu__list {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--overlay-shadow);
+}
+.menu__item {
+  height: 30px;
+  padding-inline: var(--s-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.menu__item:hover {
+  background: var(--accent-tint);
+}
+
+.dialog-inline {
+  margin-block-start: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }

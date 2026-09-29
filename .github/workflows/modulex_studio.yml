@@ -63,8 +63,16 @@ jobs:
         working-directory: studio
         run: npm test
 
-      - name: Verify the multi-resolution Windows icon
-        run: python3 studio/branding/build-ico.py --verify studio/app/src-tauri/icons/icon.ico
+      - name: Verify every icon PNG size + the multi-resolution Windows icon
+        run: python3 studio/branding/render-icons.py --verify
+
+      - name: Upload the Claude Desktop extension (.mcpb)
+        uses: actions/upload-artifact@v6
+        with:
+          name: modulex-claude-desktop-extension
+          path: studio/claude-desktop/dist/modulex-game-studio.mcpb
+          if-no-files-found: error
+          retention-days: 7
 
   windows:
     name: studio tests + Tauri NSIS installer (windows)
@@ -125,6 +133,11 @@ jobs:
         run: |
           $exe = Get-ChildItem studio/app/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
           if (-not $exe) { throw "no NSIS installer produced" }
+          # Shipped name (Execution Patch 1 §7): the small bootstrapper installer. Heavy components (Godot,
+          # export templates, .NET SDK, JDK, Android SDK) are installed on demand by the Setup Assistant.
+          $named = Join-Path $exe.DirectoryName 'ModuleXGameStudioSetup.exe'
+          Copy-Item $exe.FullName $named -Force
+          $exe = Get-Item $named
           "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
           "Installer: $($exe.Name) ($([math]::Round($exe.Length / 1MB, 1)) MB)"
 
@@ -154,7 +167,7 @@ jobs:
         with:
           name: modulex-studio-windows
           path: |
-            studio/app/src-tauri/target/release/bundle/nsis/*.exe
+            studio/app/src-tauri/target/release/bundle/nsis/ModuleXGameStudioSetup.exe
             modulex-selftest.json
           if-no-files-found: warn
           retention-days: 7

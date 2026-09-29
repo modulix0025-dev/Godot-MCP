@@ -8,23 +8,22 @@
 
 :root {
   /* Ink scale (neutral) */
-  --ink-0: #0b0d12;
-  --ink-1: #111420;
-  --ink-2: #161a27;
-  --ink-3: #1c2130;
-  --ink-4: #2a3145;
-  --ink-5: #3a4466;
-  --ink-6: #6e7689;
-  --ink-7: #a3aabb;
-  --ink-8: #d5dae3;
-  --ink-9: #f5f7fa;
+  /* Neutral ink scale — pure greys (no blue cast), black → white */
+  --ink-0: #0b0c0e;
+  --ink-1: #111214;
+  --ink-2: #17181b;
+  --ink-3: #1e2024;
+  --ink-4: #2b2d32;
+  --ink-5: #3e4046;
+  --ink-6: #707379;
+  --ink-7: #a5a8ae;
+  --ink-8: #d7d9dc;
+  --ink-9: #f5f6f7;
 
-  /* Brand: ModuleX Cobalt */
-  --cobalt: #4c6fff;
-  --cobalt-strong: #3552e0;
-  --cobalt-soft: #8fa5ff;
+  /* Monochrome identity (Execution Patch 1 §3): the product has NO brand hue. Emphasis is contrast —
+     white on ink (dark theme) or ink on white (light theme). Colour appears only as semantic state below. */
 
-  /* Semantic */
+  /* Semantic state — the ONLY colours in the product */
   --success: #2fb67c;
   --warning: #e5a13a;
   --danger: #e5484d;
@@ -78,13 +77,14 @@
   --surface-3: var(--ink-3);
   --border: rgb(255 255 255 / 0.08);
   --border-strong: rgb(255 255 255 / 0.12);
-  --text: #e8ebf2;
+  --text: #ebecee;
   --text-2: var(--ink-7);
   --text-3: var(--ink-6);
-  --accent: var(--cobalt);
-  --accent-text: #ffffff;
-  --accent-tint: rgb(76 111 255 / 0.14);
-  --focus: var(--cobalt-soft);
+  --accent: #f5f6f7; /* primary emphasis: near-white on ink */
+  --accent-hover: #ffffff;
+  --accent-text: var(--ink-0);
+  --accent-tint: rgb(255 255 255 / 0.07);
+  --focus: #ffffff;
   --overlay-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
 }
 
@@ -92,17 +92,18 @@
   color-scheme: light;
   --bg: var(--ink-9);
   --surface-1: #ffffff;
-  --surface-2: #f0f2f6;
-  --surface-3: #e7eaf0;
+  --surface-2: #f1f2f3;
+  --surface-3: #e7e8ea;
   --border: rgb(11 13 18 / 0.08);
   --border-strong: rgb(11 13 18 / 0.12);
   --text: var(--ink-0);
-  --text-2: #4a5163;
-  --text-3: #7a8194;
-  --accent: var(--cobalt-strong);
+  --text-2: #4b4e55;
+  --text-3: #7b7e85;
+  --accent: var(--ink-0); /* primary emphasis: ink on white */
+  --accent-hover: #000000;
   --accent-text: #ffffff;
-  --accent-tint: rgb(76 111 255 / 0.1);
-  --focus: var(--cobalt);
+  --accent-tint: rgb(11 13 18 / 0.06);
+  --focus: var(--ink-0);
   --overlay-shadow: 0 12px 40px rgb(11 13 18 / 0.16);
 }
 

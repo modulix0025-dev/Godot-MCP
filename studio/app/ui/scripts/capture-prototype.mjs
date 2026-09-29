@@ -60,6 +60,15 @@ await shot('studio-rtl-ar-dark', h('studio', 'normal', 'dark', 'ar'));
 await shot('studio-rtl-ar-light', h('studio', 'normal', 'light', 'ar'));
 await shot('projects-rtl-ar-dark', h('projects', 'normal', 'dark', 'ar'));
 for (const s of SCREENS) for (const st of STATES) await shot(`state-${s}-${st}`, h(s, st));
+// Execution Patch 1: settings sections + the Claude Desktop handoff menu.
+for (const sec of ['ai-providers', 'routing', 'developer']) {
+  await shot(`settings-${sec}-dark`, `${h('settings')}&section=${sec}`);
+  await shot(`settings-${sec}-light`, `${h('settings', 'normal', 'light')}&section=${sec}`);
+}
+await shot('studio-claude-handoff-dark', h('studio'), async () => {
+  await page.click('.menu > summary');
+  await page.waitForTimeout(200);
+});
 await shot('palette-dark', h('studio'), async () => {
   await page.keyboard.press('Control+k');
   await page.keyboard.type('bu');

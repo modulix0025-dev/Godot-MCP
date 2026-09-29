@@ -24,9 +24,14 @@ import {
   BUILDS,
   CHAT,
   CONSOLE_LINES,
+  PROFILE_ROWS,
   PROJECTS,
+  PROVENANCE,
+  PROVIDERS,
+  ROUTING,
   STAGES,
   TESTS,
+  TRUST_TONE,
   WORKERS,
 } from './data';
 import type { Strings } from './i18n';
@@ -237,7 +242,7 @@ export function StudioScreen({ t, state }: ScreenProps) {
               <StatusPill tone="warning">Ask</StatusPill>
             </div>
             <div className="muted" style={{ fontSize: 12 }}>
-              studio_asset_request · 3D_CHARACTER · hunyuan3d2 · Remote GPU #1 · checkpoint first
+              studio_asset_generate · 3D_CHARACTER · hunyuan3d2 · Remote GPU #1 · checkpoint first
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn btn--primary btn--sm">{t.approve}</button>
@@ -277,6 +282,21 @@ export function StudioScreen({ t, state }: ScreenProps) {
             <IconPause size={14} /> {t.pauseAgent}
           </button>
           <button className="btn btn--sm">{t.openInGodot}</button>
+          <details className="menu">
+            <summary className="btn btn--sm">Open in Claude Desktop ▾</summary>
+            <div className="menu__list" role="menu">
+              {['Continue task', 'Review failure', 'Review build', 'Review QA report'].map((x) => (
+                <button
+                  key={x}
+                  className="menu__item"
+                  role="menuitem"
+                  title="Opens Claude Desktop with a context summary — no secrets"
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
+          </details>
         </div>
         <div className="preview">
           <div className="preview__frame">
@@ -314,7 +334,7 @@ export function StudioScreen({ t, state }: ScreenProps) {
         <div className="studio__colhead">
           <span className="section-label">{t.pipeline}</span>
           <span style={{ flex: 1 }} />
-          <span className="faint num">9 / 20</span>
+          <span className="faint num">9 / {STAGES.length}</span>
         </div>
         <div className="pipeline">
           {STAGES.map((s) => (
@@ -479,33 +499,47 @@ export function AssetsScreen({ t, state }: ScreenProps) {
             </section>
           ))}
         </div>
-        <Card title="Player — explorer · detail drawer (preview)">
-          <div className="chain">
-            {ASSET_CHAIN.map((s) => (
-              <span
-                key={s}
-                className="chain__step"
-                style={
-                  s === 'Rig'
-                    ? { borderColor: 'var(--warning)', color: 'var(--warning)' }
-                    : ['Anim', 'Collision', 'LOD', 'GLB'].includes(s)
-                      ? { opacity: 0.5 }
-                      : undefined
-                }
-              >
-                {s}
-              </span>
-            ))}
-          </div>
-          <p className="muted" style={{ marginBlockEnd: 0 }}>
-            BLOCKED — requires rigging. The workflow produces a static mesh; ModuleX never presents it as a playable
-            character.
-          </p>
-          <div style={{ display: 'flex', gap: 8, marginBlockStart: 12 }}>
-            <button className="btn btn--sm">{t.retryStage}</button>
-            <button className="btn btn--sm">{t.replace}</button>
-          </div>
-        </Card>
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+          <Card title="Player — explorer · detail drawer (preview)">
+            <div className="chain">
+              {ASSET_CHAIN.map((s) => (
+                <span
+                  key={s}
+                  className="chain__step"
+                  style={
+                    s === 'Rig'
+                      ? { borderColor: 'var(--warning)', color: 'var(--warning)' }
+                      : ['Anim', 'Collision', 'LOD', 'GLB'].includes(s)
+                        ? { opacity: 0.5 }
+                        : undefined
+                  }
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+            <p className="muted" style={{ marginBlockEnd: 0 }}>
+              BLOCKED — requires rigging. The workflow produces a static mesh; ModuleX never presents it as a playable
+              character.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginBlockStart: 12 }}>
+              <button className="btn btn--sm">{t.retryStage}</button>
+              <button className="btn btn--sm">{t.replace}</button>
+            </div>
+          </Card>
+          {PROVENANCE.map((p) => (
+            <Card
+              key={p.asset}
+              title={`Provenance · ${p.asset}`}
+              actions={<StatusPill tone={p.verdict.tone}>{p.verdict.label}</StatusPill>}
+            >
+              <KeyValue rows={p.rows} />
+              <p className="muted" style={{ marginBlockEnd: 0, fontSize: 12 }}>
+                {p.verdict.note}
+              </p>
+            </Card>
+          ))}
+        </div>
       </Stateful>
     </Page>
   );
@@ -661,6 +695,7 @@ export function BuildsScreen({ t, state }: ScreenProps) {
                 <tr>
                   <th>Build</th>
                   <th>Platform</th>
+                  <th>Profile</th>
                   <th>Version</th>
                   <th>Status</th>
                   <th>Size</th>
@@ -673,6 +708,9 @@ export function BuildsScreen({ t, state }: ScreenProps) {
                   <tr key={b.id}>
                     <td className="mono">{b.id}</td>
                     <td>{b.platform}</td>
+                    <td>
+                      <span className="chain__step mono">{b.profile}</span>
+                    </td>
                     <td className="num">{b.version}</td>
                     <td>
                       <StatusPill tone={b.tone}>{b.status}</StatusPill>
@@ -715,10 +753,35 @@ export function BuildsScreen({ t, state }: ScreenProps) {
               </div>
             ))}
             <p className="faint" style={{ fontSize: 12, margin: 0 }}>
-              iOS on Windows = “Prepared”. A signed .ipa needs the macOS worker.
+              iOS without a signed build = PREPARED, never RELEASED. Release: BLOCKED — macOS/Xcode build worker
+              required.
             </p>
           </Card>
         </div>
+        <Card title="Build profiles" pad={false}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Profile</th>
+                <th>Export</th>
+                <th>Debug bridges</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PROFILE_ROWS.map(([name, exp, bridges, purpose]) => (
+                <tr key={name}>
+                  <td className="mono">{name}</td>
+                  <td className="muted">{exp}</td>
+                  <td>
+                    <StatusPill tone={bridges === 'none' ? 'success' : 'warning'}>{bridges}</StatusPill>
+                  </td>
+                  <td className="muted">{purpose}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
       </Stateful>
     </Page>
   );
@@ -759,41 +822,71 @@ export function WorkersScreen({ t, state }: ScreenProps) {
         }}
       >
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))' }}>
-          {WORKERS.map((w) => (
-            <Card
-              key={w.name}
-              title={
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <StatusDot tone={w.tone} pulse={w.tone === 'success'} />
-                  {w.name}
-                </span>
-              }
-              actions={<StatusPill tone={w.tone}>{w.status}</StatusPill>}
-            >
-              <KeyValue
-                rows={[
-                  ['Hardware', w.gpu],
-                  ['Provider', w.provider],
-                  ['Runtime', w.comfy],
-                  [
-                    'Capabilities',
-                    <span style={{ display: 'flex', gap: 4 }}>
-                      {w.caps.map((c) => (
-                        <span className="chain__step" key={c}>
-                          {c}
-                        </span>
-                      ))}
-                    </span>,
-                  ],
-                  ['Rate', <span className="num">{w.rate}</span>],
-                  ['Queue', <span className="num">{w.queue}</span>],
-                ]}
-              />
-              <div style={{ marginBlockStart: 12, display: 'flex', gap: 8 }}>
-                <button className="btn btn--sm">{t.test}</button>
-              </div>
-            </Card>
-          ))}
+          {WORKERS.map((w) => {
+            const tone = TRUST_TONE[w.trust];
+            return (
+              <Card
+                key={w.id}
+                title={
+                  <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <StatusDot tone={tone} pulse={w.trust === 'TRUSTED'} />
+                    <span className="mono">{w.id}</span>
+                  </span>
+                }
+                actions={<StatusPill tone={tone}>{w.trust}</StatusPill>}
+              >
+                <KeyValue
+                  rows={[
+                    ['Hardware', w.gpu],
+                    ['Provider', `${w.provider} · ${w.location}`],
+                    ['Runtime', w.comfy],
+                    ['Transport', w.transport],
+                    [
+                      'Capabilities',
+                      <span style={{ display: 'flex', gap: 4 }}>
+                        {w.caps.map((c) => (
+                          <span className="chain__step" key={c}>
+                            {c}
+                          </span>
+                        ))}
+                      </span>,
+                    ],
+                    ['Rate', <span className="num">{w.rate}</span>],
+                    ['Queue · failures', <span className="num">{`${w.queue} · ${w.failures}`}</span>],
+                  ]}
+                />
+                {w.note && (
+                  <p className="muted" style={{ fontSize: 12, marginBlockEnd: 0 }}>
+                    {w.note}
+                  </p>
+                )}
+                {w.onboarding && (
+                  <div style={{ marginBlockStart: 12 }}>
+                    <div className="section-label" style={{ marginBlockEnd: 6 }}>
+                      Onboarding
+                    </div>
+                    {w.onboarding.map(([step, st]) => (
+                      <div
+                        key={step}
+                        style={{ display: 'flex', gap: 8, alignItems: 'center', height: 22 }}
+                        className="muted"
+                      >
+                        <StatusDot tone={st === 'passed' ? 'success' : st === 'failed' ? 'danger' : 'neutral'} /> {step}
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', height: 22 }} className="faint">
+                      <StatusDot tone="neutral" /> Trust decision (owner)
+                    </div>
+                  </div>
+                )}
+                <div style={{ marginBlockStart: 12, display: 'flex', gap: 8 }}>
+                  <button className="btn btn--sm">{t.test}</button>
+                  {w.trust === 'QUARANTINED' && <button className="btn btn--sm">Re-enable (owner)</button>}
+                  {w.trust === 'UNTRUSTED' && <button className="btn btn--sm">Continue onboarding</button>}
+                </div>
+              </Card>
+            );
+          })}
         </div>
       </Stateful>
     </Page>
@@ -839,23 +932,34 @@ export function ApprovalsScreen({ t, state }: ScreenProps) {
             key={a.tool}
             title={
               <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {a.tool}
+                <span className="mono">{a.tool}</span>
                 <StatusPill tone={a.tone}>{a.tier}</StatusPill>
               </span>
             }
-            actions={<CostBadge value={a.cost} />}
+            actions={a.cost === '—' ? undefined : <CostBadge value={a.cost} />}
           >
             <KeyValue
               rows={[
-                ['Role', a.role],
-                ['Arguments', <span className="mono">{a.args}</span>],
+                ['Requested by', `${a.requester} · ${a.role}`],
+                ['What', a.what],
                 ['Why', a.why],
+                ['Scope', a.scope],
+                [
+                  'Files',
+                  <span className="mono" style={{ display: 'flex', flexDirection: 'column' }}>
+                    {a.files.map((f) => (
+                      <span key={f}>{f}</span>
+                    ))}
+                  </span>,
+                ],
+                ['Risk', <StatusPill tone={a.risk === 'high' ? 'danger' : 'neutral'}>{a.risk}</StatusPill>],
+                ['Rollback', a.rollback],
               ]}
             />
             <div style={{ display: 'flex', gap: 8, marginBlockStart: 12 }}>
               <button className="btn btn--primary">{t.approve}</button>
               <button className="btn">{t.reject}</button>
-              <button className="btn btn--ghost">{t.alwaysAllow}</button>
+              {a.requester !== 'Claude Desktop' && <button className="btn btn--ghost">{t.alwaysAllow}</button>}
             </div>
           </Card>
         ))}
@@ -865,19 +969,185 @@ export function ApprovalsScreen({ t, state }: ScreenProps) {
 }
 
 /* ---------------- Settings ---------------- */
+export const SETTINGS_SECTIONS = [
+  ['appearance', 'Appearance & language'],
+  ['ai-providers', 'AI Providers'],
+  ['routing', 'Model routing'],
+  ['godot', 'Godot installations'],
+  ['autonomy', 'Autonomy policy'],
+  ['budgets', 'Budgets'],
+  ['secrets', 'Secrets'],
+  ['updates', 'Updates'],
+  ['developer', 'Developer Mode'],
+] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number][0];
+
+function AppearanceSection({
+  theme,
+  lang,
+  onTheme,
+  onLang,
+}: {
+  theme: string;
+  lang: string;
+  onTheme: (v: 'dark' | 'light') => void;
+  onLang: (v: 'en' | 'ar') => void;
+}) {
+  return (
+    <Card title="Appearance & language">
+      <KeyValue
+        rows={[
+          [
+            'Theme',
+            <div className="seg">
+              {(['dark', 'light'] as const).map((v) => (
+                <button key={v} aria-pressed={theme === v} onClick={() => onTheme(v)}>
+                  {v === 'dark' ? 'Dark' : 'Light'}
+                </button>
+              ))}
+            </div>,
+          ],
+          [
+            'Language',
+            <div className="seg">
+              {(['ar', 'en'] as const).map((v) => (
+                <button key={v} aria-pressed={lang === v} onClick={() => onLang(v)}>
+                  {v === 'ar' ? 'العربية' : 'English'}
+                </button>
+              ))}
+            </div>,
+          ],
+          [
+            'Density',
+            <div className="seg">
+              <button aria-pressed>Comfortable</button>
+              <button aria-pressed={false}>Dense</button>
+            </div>,
+          ],
+          [
+            'Autonomy (defaults)',
+            <span className="muted">
+              Read Auto · Local write Auto + checkpoint · Destructive Ask · Cost Ask &gt; $0.25 · Critical Disabled
+            </span>,
+          ],
+        ]}
+      />
+    </Card>
+  );
+}
+
+function ProvidersSection() {
+  return (
+    <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))' }}>
+      {PROVIDERS.map((p) => (
+        <Card key={p.name} title={p.name} actions={<StatusPill tone={p.tone}>{p.status}</StatusPill>}>
+          <KeyValue rows={p.rows} />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBlockStart: 12 }}>
+            {p.actions.map((x, i) => (
+              <button key={x} className={`btn btn--sm${i === 0 && p.tone !== 'neutral' ? '' : ''}`}>
+                {x}
+              </button>
+            ))}
+          </div>
+          {p.name === 'Claude API' && (
+            <div style={{ marginBlockStart: 12 }}>
+              <div className="section-label" style={{ marginBlockEnd: 6 }}>
+                Effort (claude-opus-5-5)
+              </div>
+              <div className="seg">
+                {['Low', 'Medium', 'High', 'Max'].map((x) => (
+                  <button key={x} aria-pressed={x === 'Medium'}>
+                    {x}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function RoutingSection() {
+  return (
+    <Card title="Model routing">
+      <KeyValue rows={ROUTING} />
+      <p className="faint" style={{ fontSize: 12, marginBlockEnd: 0 }}>
+        Only models and effort levels each provider supports are offered; settings are validated before any request is
+        sent. ModuleX Agent stays the orchestrator — Claude is a provider, not a second agent.
+      </p>
+    </Card>
+  );
+}
+
+function DeveloperSection() {
+  return (
+    <Card title="Developer Mode" actions={<StatusPill tone="neutral">Off</StatusPill>}>
+      <p className="muted" style={{ marginBlockStart: 0 }}>
+        Off by default. Agents see only the Agent-safe <span className="mono">studio_*</span> tools. Developer Mode lets
+        the ModuleX Agent call raw Godot-MCP tools; every call is still policy-checked, approval-gated when destructive,
+        and written to the audit log. Claude Desktop never receives raw tools.
+      </p>
+      <KeyValue
+        rows={[
+          [
+            'raw-tools',
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" /> Raw Godot-MCP tools (node, scene, resource, script, …)
+            </label>,
+          ],
+          [
+            'reflection',
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" /> reflection-method-call (elevated · approval every call)
+            </label>,
+          ],
+        ]}
+      />
+      <div className="dialog-inline" role="dialog" aria-label="Confirm Developer Mode">
+        <strong>Enable Developer Mode?</strong>
+        <p className="muted" style={{ margin: '6px 0 10px' }}>
+          Agents can then reach raw editor tools. This is recorded in Activity with your confirmation.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn--primary btn--sm">Enable for this session</button>
+          <button className="btn btn--sm">Cancel</button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsScreen({
   t,
   state,
   onTheme,
   onLang,
+  onSection,
+  section,
   theme,
   lang,
 }: ScreenProps & {
   onTheme: (v: 'dark' | 'light') => void;
   onLang: (v: 'en' | 'ar') => void;
+  onSection: (v: SettingsSection) => void;
+  section: SettingsSection;
   theme: string;
   lang: string;
 }) {
+  const body = (() => {
+    switch (section) {
+      case 'ai-providers':
+        return <ProvidersSection />;
+      case 'routing':
+        return <RoutingSection />;
+      case 'developer':
+        return <DeveloperSection />;
+      default:
+        return <AppearanceSection theme={theme} lang={lang} onTheme={onTheme} onLang={onLang} />;
+    }
+  })();
   return (
     <Page title={t.nav.settings}>
       <Stateful
@@ -907,67 +1177,22 @@ export function SettingsScreen({
           ),
         }}
       >
-        <div className="grid" style={{ gridTemplateColumns: '220px 1fr' }}>
+        <div className="grid" style={{ gridTemplateColumns: '220px 1fr', alignItems: 'start' }}>
           <Card pad={false}>
-            {[
-              'General',
-              'Appearance',
-              'Language',
-              'Agent connection',
-              'Godot installations',
-              'Autonomy policy',
-              'Budgets',
-              'Secrets',
-              'Updates',
-              'Developer mode',
-            ].map((x, i) => (
-              <div key={x} className="stage" aria-current={i === 1 ? 'step' : undefined}>
+            {SETTINGS_SECTIONS.map(([id, label]) => (
+              <button
+                key={id}
+                className="stage stage--link"
+                aria-current={section === id ? 'step' : undefined}
+                onClick={() => onSection(id)}
+              >
                 <span />
-                <span>{x}</span>
+                <span>{label}</span>
                 <span />
-              </div>
+              </button>
             ))}
           </Card>
-          <Card title="Appearance & language">
-            <KeyValue
-              rows={[
-                [
-                  'Theme',
-                  <div className="seg">
-                    {(['dark', 'light'] as const).map((v) => (
-                      <button key={v} aria-pressed={theme === v} onClick={() => onTheme(v)}>
-                        {v === 'dark' ? 'Dark' : 'Light'}
-                      </button>
-                    ))}
-                  </div>,
-                ],
-                [
-                  'Language',
-                  <div className="seg">
-                    {(['ar', 'en'] as const).map((v) => (
-                      <button key={v} aria-pressed={lang === v} onClick={() => onLang(v)}>
-                        {v === 'ar' ? 'العربية' : 'English'}
-                      </button>
-                    ))}
-                  </div>,
-                ],
-                [
-                  'Density',
-                  <div className="seg">
-                    <button aria-pressed>Comfortable</button>
-                    <button aria-pressed={false}>Dense</button>
-                  </div>,
-                ],
-                [
-                  'Autonomy (defaults)',
-                  <span className="muted">
-                    Read Auto · Local write Auto + checkpoint · Destructive Ask · Cost Ask &gt; $0.25 · Critical
-                    Disabled
-                  </span>,
-                ],
-              ]}
-            />
-          </Card>
+          {body}
         </div>
       </Stateful>
     </Page>
