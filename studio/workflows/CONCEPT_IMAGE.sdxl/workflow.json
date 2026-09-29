@@ -1,0 +1,42 @@
+{
+  "id": "CONCEPT_IMAGE.sdxl",
+  "version": "1.0.0",
+  "kind": "comfyui",
+  "description": "Text to concept image (SDXL base 1.0, 1024x1024). Used as the reference image for image-to-mesh workflows.",
+  "inputs": {
+    "prompt": { "type": "string", "required": true },
+    "negative": { "type": "string", "required": false },
+    "seed": { "type": "seed", "required": false }
+  },
+  "outputs": { "image": { "type": "image" } },
+  "dependencies": { "models": ["checkpoints/sd_xl_base_1.0.safetensors"], "custom_nodes": [] },
+  "worker_capabilities": ["image"],
+  "cost_profile": { "est_gpu_seconds": 20, "est_usd": 0.01 },
+  "timeout_s": 300,
+  "retry_policy": { "max_attempts": 2, "backoff_s": 5 },
+  "validation": { "output_checks": ["png_magic", "nonempty", "provenance"] },
+  "license_facts": [
+    {
+      "subject": "model:sd_xl_base_1.0",
+      "license": "CreativeML Open RAIL++-M",
+      "commercial_use": "conditional",
+      "conditions": "Use-based restrictions of the OpenRAIL++-M licence (Attachment A) apply.",
+      "evidence_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+      "recorded_by": "workflow-registry"
+    }
+  ],
+  "graph": "graph.api.json",
+  "bindings": { "prompt": "6.inputs.text", "negative": "7.inputs.text", "seed": "3.inputs.seed" },
+  "output_nodes": { "image": { "node": "9", "ui_key": "images" } },
+  "produces": ["image"],
+  "required_nodes": [
+    "CheckpointLoaderSimple",
+    "EmptyLatentImage",
+    "CLIPTextEncode",
+    "KSampler",
+    "VAEDecode",
+    "SaveImage"
+  ],
+  "min_vram_gb": 8,
+  "verification": { "status": "UNVERIFIED", "evidence": null }
+}

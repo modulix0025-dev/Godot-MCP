@@ -17,7 +17,8 @@ All work is on branch `claude/practical-hawking-whz0fm`.
 | 4 · Core foundation | **Done** | GATE 4 live suite 6/6 against a real Godot 4.5.1 editor (locally and in CI) |
 | 5–6 · Gateway + pipeline engine | **Done.** Playtest, visual and optimization stages report PARTIAL_SUCCESS until Phase 9. | GATE 6 live: spec → exported builds (locally and in CI job `studio-pipeline`) |
 | 10 · Template + Build Service | **Windows, iOS-prep and Android-BLOCKED paths done.** Smoke on a Windows host is still open. | same GATE 6 run |
-| 7–9, 11–15 | Not started. | — |
+| 7 · ComfyUI workers + jobs | **Done against the mock.** The live worker test is BLOCKED: no GPU worker (D-045). | GATE 7 mock suite 18/18; the live test reports BLOCKED |
+| 8–9, 11–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -297,6 +298,18 @@ windows-release/data_SpaceKidJourney_windows_x86_64: SpaceKidJourney.dll, no Mcp
 A Linux RELEASE export of the same project, done by hand, boots and runs 300 frames with no errors.
 
 CI job `studio-pipeline` runs the same gate. It uploads the Windows RELEASE build as the artifact `sample-game-space-kid-journey-windows`.
+
+## Phase 7: ComfyUI workers, workflow registry and job system
+
+- **Client** (`core/src/comfy/client.ts`). It uses the documented endpoints only, over HTTP (ComfyUI is GPL-3.0 and is never bundled):
+  - `/api/jobs`, with a `/history` + `/queue` fallback;
+  - cancel, with an interrupt + queue-delete fallback;
+  - size-capped `/view`.
+- **Job system** (D-044). It chooses a worker by trust, capabilities, required nodes, VRAM, priority, cost and queue depth. It then persists the job before sending it, and queries the worker before any resend. Every failure is classified, and the cost goes into the ledger.
+- **Onboarding runner.** It runs all eight steps. A remote worker that answers without credentials fails authentication and can never become TRUSTED.
+- **Reference proxy.** `worker/comfy-proxy/Caddyfile`: TLS, a bearer token, and ComfyUI-Manager and the user-data routes closed.
+- **Workflow registry.** `studio/workflows/` holds 2 built-in workflows, both UNVERIFIED (D-045), and cross-checks each definition against its graph.
+- **GATE 7.** The mock suite passes 18/18. The live test prints `live: BLOCKED — no ComfyUI worker configured`.
 
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 

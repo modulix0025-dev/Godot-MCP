@@ -1,0 +1,37 @@
+# ModuleX reference authenticating proxy for a remote ComfyUI worker (Execution Patch 1 §8, Phase 7).
+#
+# ComfyUI has no authentication of its own, so it must NEVER be reachable from the internet directly:
+#   python main.py --listen 127.0.0.1 --port 8188      # loopback only
+# Caddy terminates TLS (automatic certificates for COMFY_DOMAIN) and refuses every request without the bearer
+# token. Put the token in the environment of the Caddy process only. The Studio stores its copy in Windows
+# Credential Manager and sends it as "Authorization: Bearer <token>".
+#
+#   COMFY_DOMAIN=gpu1.example.com COMFY_PROXY_TOKEN=$(openssl rand -base64 32) caddy run --config Caddyfile
+
+{$COMFY_DOMAIN} {
+	# Every route, including /ws, /view and /upload, needs the token.
+	@unauthorised not header Authorization "Bearer {$COMFY_PROXY_TOKEN}"
+	respond @unauthorised 401 {
+		close
+	}
+
+	request_body {
+		max_size 64MB
+	}
+
+	# The Studio never needs these ComfyUI routes; keep them closed.
+	@blocked path /manager/* /api/manager/* /internal/* /userdata/* /api/userdata/*
+	respond @blocked 403
+
+	reverse_proxy 127.0.0.1:8188 {
+		header_up -Authorization
+	}
+
+	log {
+		output stderr
+		# Never log request headers (they carry the token).
+		format filter {
+			request>headers delete
+		}
+	}
+}

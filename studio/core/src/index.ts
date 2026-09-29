@@ -31,3 +31,7 @@ export * from './project/project-factory.js';
 export * from './qa/scene-runner.js';
 export * from './build/build-service.js';
 export * from './pipeline/engine.js';
+export * from './comfy/client.js';
+export * from './comfy/jobs.js';
+export * from './comfy/registry.js';
+export * from './comfy/onboarding.js';

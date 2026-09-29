@@ -116,7 +116,8 @@ jobs:
           npx vitest run --reporter=verbose tests/live-godot.test.ts tests/foundation.test.ts 2>&1 | tee ../../gate4.log
           # The live suite must actually have run (never a silent skip in this job).
           grep -q "scene-create → node-create → scene-save" ../../gate4.log
-          if grep -q "not exercised" ../../gate4.log; then echo "GATE 4 was skipped" >&2; exit 1; fi
+          # The "not exercised" placeholder is listed as skipped (↓) when the live suite runs; fail only if it PASSED.
+          if grep -E "✓.*not exercised" ../../gate4.log; then echo "GATE 4 was skipped" >&2; exit 1; fi
 
       - name: Upload harness evidence
         if: always()

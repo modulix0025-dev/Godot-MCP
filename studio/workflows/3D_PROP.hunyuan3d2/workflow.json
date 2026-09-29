@@ -1,0 +1,45 @@
+{
+  "id": "3D_PROP.hunyuan3d2",
+  "version": "1.0.0",
+  "kind": "comfyui",
+  "description": "Reference image to an untextured, unrigged static mesh (GLB) with the ComfyUI core Hunyuan3D v2 nodes.",
+  "inputs": {
+    "reference_image": { "type": "image", "required": true },
+    "seed": { "type": "seed", "required": false }
+  },
+  "outputs": { "mesh": { "type": "mesh_glb" } },
+  "dependencies": { "models": ["checkpoints/hunyuan3d-dit-v2.safetensors"], "custom_nodes": [] },
+  "worker_capabilities": ["3d"],
+  "cost_profile": { "est_gpu_seconds": 90, "est_usd": 0.05 },
+  "timeout_s": 900,
+  "retry_policy": { "max_attempts": 2, "backoff_s": 10 },
+  "validation": { "output_checks": ["glb_magic", "nonempty", "triangle_budget", "provenance"] },
+  "license_facts": [
+    {
+      "subject": "model:Hunyuan3D-2",
+      "license": "Tencent Hunyuan 3D 2.0 Community License",
+      "commercial_use": "conditional",
+      "conditions": "Not licensed in the EU, the UK or South Korea; products above 1M monthly active users need a separate licence from Tencent.",
+      "evidence_url": "https://huggingface.co/tencent/Hunyuan3D-2/blob/main/LICENSE",
+      "recorded_by": "workflow-registry"
+    }
+  ],
+  "graph": "graph.api.json",
+  "bindings": { "reference_image": "2.inputs.image", "seed": "7.inputs.seed" },
+  "output_nodes": { "mesh": { "node": "9", "ui_key": "3d" } },
+  "produces": ["mesh"],
+  "required_nodes": [
+    "ImageOnlyCheckpointLoader",
+    "LoadImage",
+    "CLIPVisionEncode",
+    "Hunyuan3Dv2Conditioning",
+    "EmptyLatentHunyuan3Dv2",
+    "ModelSamplingAuraFlow",
+    "KSampler",
+    "VAEDecodeHunyuan3D",
+    "VoxelToMeshBasic",
+    "SaveGLB"
+  ],
+  "min_vram_gb": 12,
+  "verification": { "status": "UNVERIFIED", "evidence": null }
+}

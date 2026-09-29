@@ -271,6 +271,22 @@ export const WorkflowDefinitionSchema = z
       .strict(),
     license_facts: z.array(LicenseFactSchema).min(1),
     graph: packagePath,
+    /** Phase 7 execution fields (ComfyUI). Input name → `<nodeId>.inputs.<field>` in the API graph. */
+    bindings: z.record(z.string(), z.string().regex(/^[^.\s]+\.inputs\.[A-Za-z0-9_]+$/)).optional(),
+    /** Output name → the node that reports it and the history `ui` key it appears under. */
+    output_nodes: z
+      .record(z.string(), z.object({ node: z.string().min(1), ui_key: z.enum(['images', '3d']) }).strict())
+      .optional(),
+    /** What the workflow really produces (a mesh-only workflow never claims texture/rig/animation). */
+    produces: z.array(z.enum(['mesh', 'texture', 'material', 'rig', 'animation', 'image'])).optional(),
+    /** Node classes the worker must have (checked against /object_info before submission). */
+    required_nodes: z.array(z.string().min(1)).optional(),
+    min_vram_gb: z.number().nonnegative().optional(),
+    /** VERIFIED only after a real generation on a real worker; UNVERIFIED workflows never run production jobs. */
+    verification: z
+      .object({ status: z.enum(['UNVERIFIED', 'VERIFIED']), evidence: z.string().nullable() })
+      .strict()
+      .optional(),
   })
   .strict();
 export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;

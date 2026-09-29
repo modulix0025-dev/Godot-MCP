@@ -667,3 +667,38 @@ reason. The stage then reports PARTIAL_SUCCESS; it never reports SUCCESS for the
 
 Claude, or the agent once it connects, improves the game through the Studio tools. The generator is only the
 starting point, and the same input always gives the same files.
+
+## D-044 · ComfyUI jobs: persist before send, query before resend (DECIDED, built)
+
+The job system (`core/src/comfy/jobs.ts`) follows these rules:
+
+- Every attempt gets a fresh uuid4 `prompt_id`, and it is written to `comfy_jobs` **before** the POST.
+- When the outcome of a submit or a poll is uncertain (for example the connection drops), the Studio asks the
+  worker about that `prompt_id`.
+- A new attempt, with a **new** `prompt_id` under the same idempotency key, is sent only when the worker
+  reports the prompt as unknown.
+- A completed job for a key returns the cached outputs.
+
+Mock evidence (`core/tests/comfy.test.ts`):
+
+- Response dropped after the worker accepted the job: 1 accepted submission, and the job completes.
+- Submit dropped before the worker saw it: 2 `prompt_id`s, 1 accepted submission.
+- A crash mid-job: the persisted `prompt_id` is followed, and nothing is resubmitted.
+
+Retries apply only to `worker_lost` and `timeout`. A timeout also cancels the job on the worker. Outputs are
+size-capped, hashed and checked by magic bytes. A malformed output is a worker anomaly.
+
+## D-045 · Built-in workflows ship UNVERIFIED (DECIDED; live verification BLOCKED)
+
+The plan requires registry entries that come from real, tested workflows. There is no GPU worker in this
+environment. `CONCEPT_IMAGE.sdxl` and `3D_PROP.hunyuan3d2` (the ComfyUI core Hunyuan3D v2 nodes, mesh only)
+therefore ship as **UNVERIFIED**:
+
+- They run only test jobs, such as onboarding and the GATE 7 live test.
+- Production jobs report `BLOCKED workflow_unverified`.
+
+A workflow becomes VERIFIED only after a real generation passes validation. The GATE 7 live test
+(`comfy-live.test.ts`, `MODULEX_COMFY_URL`) currently reports **BLOCKED — no ComfyUI worker configured**.
+
+The Hunyuan3D-2 licence is recorded as `conditional`: not licensed in the EU, UK or South Korea, and a separate
+licence is needed above 1M MAU.

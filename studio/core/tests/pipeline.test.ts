@@ -103,7 +103,7 @@ describe('build profiles', () => {
   });
 
   it('a Windows export whose assemblies are missing is FAILED even when Godot exits 0 (D-011)', async () => {
-    const r = await new BuildService({ godot: process.platform === 'win32' ? 'cmd' : 'true' }).build({
+    const r = await new BuildService({ godot: process.execPath }).build({
       projectId: 'p',
       projectDir: tmp(),
       assembly: 'P',
