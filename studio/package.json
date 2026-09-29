@@ -12,6 +12,7 @@
     "shared",
     "core",
     "worker",
+    "claude-desktop",
     "app/ui"
   ],
   "scripts": {
