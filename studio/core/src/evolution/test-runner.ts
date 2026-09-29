@@ -59,12 +59,16 @@ export function runGate(
   const counts = { passed: 0, failed: 0, skipped: 0 };
   let sawCounts = false;
   for (const c of commands) {
-    const r = spawnSync(c.cmd[0]!, c.cmd.slice(1), {
+    // npm/npx/yarn/pnpm are .cmd shims on Windows and can only be started through cmd.exe; everything else
+    // (node, python, git, dotnet) is spawned directly so cmd.exe never re-parses its arguments.
+    const shim = process.platform === 'win32' && /^(npm|npx|yarn|pnpm)$/i.test(c.cmd[0]!);
+    const [exe, args] = shim ? [c.cmd.map(winQuote).join(' '), [] as string[]] : [c.cmd[0]!, c.cmd.slice(1)];
+    const r = spawnSync(exe, args, {
       cwd: join(root, c.cwd ?? '.'),
       encoding: 'utf-8',
       timeout: c.timeout_ms ?? 15 * 60_000,
       env: { ...process.env, CI: '1', FORCE_COLOR: '0' },
-      shell: process.platform === 'win32', // npm/npx are .cmd shims on Windows
+      shell: shim,
     });
     const text = `${r.stdout ?? ''}${r.stderr ?? ''}${r.error ? String(r.error) : ''}`;
     out += `$ ${c.cmd.join(' ')}\n${text}\n`;
@@ -88,4 +92,9 @@ export function runGate(
     duration_ms: Date.now() - started,
     output_tail: redact(out.split('\n').slice(-40).join('\n')),
   };
+}
+
+/** Quote one argument for cmd.exe (gate commands come from configuration, never from agent input). */
+function winQuote(a: string): string {
+  return /^[A-Za-z0-9_./:@=-]+$/.test(a) ? a : `"${a.replace(/"/g, '""')}"`;
 }
