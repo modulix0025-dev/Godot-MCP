@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ModuleX Game Studio",
+  "mainBinaryName": "ModuleX Game Studio",
+  "version": "0.1.0",
+  "identifier": "com.modulex.gamestudio",
+  "build": {
+    "frontendDist": "../ui/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev -w @modulex/ui",
+    "beforeBuildCommand": "npm run build -w @modulex/ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ModuleX Game Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 760
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "ModuleX",
+    "copyright": "Copyright (c) 2026 ModuleX. Built with the Godot Engine (MIT).",
+    "category": "DeveloperTool",
+    "shortDescription": "Describe a game. ModuleX builds it.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico", "icons/icon.png"],
+    "externalBin": ["binaries/node"],
+    "resources": { "../../core/dist/modulex-core.mjs": "core/modulex-core.mjs" },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["English", "Arabic"]
+      }
+    }
+  }
+}

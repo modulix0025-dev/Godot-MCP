@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+app/src-tauri/target
+app/src-tauri/gen
+package-lock.json
+spikes

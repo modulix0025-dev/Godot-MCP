@@ -1,0 +1,25 @@
+{
+  "name": "@modulex/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ModuleX Studio Core: policy gateway, pipeline engine, Godot manager, QA runner, asset factory, build service.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild src/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/modulex-core.mjs --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modulex/shared": "*",
+    "godot-cli": "file:../../cli"
+  },
+  "bin": {
+    "modulex-core": "dist/modulex-core.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

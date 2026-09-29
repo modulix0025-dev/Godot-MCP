@@ -1,0 +1,10 @@
+{
+  "studioVersion": "0.1.0",
+  "godot": { "version": "4.5.1", "flavor": "mono", "versionPrefix": "4.5.1.stable.mono" },
+  "dotnetSdk": "8.0",
+  "godotNetSdk": "4.5.1",
+  "addon": { "godot_mcp": "0.25.1", "modulex_studio": "0.1.0" },
+  "server": { "name": "gamedev-mcp-server", "version": "9.2.9" },
+  "nuget": { "com.IvanMurzak.ReflectorNet": "5.4.1", "com.IvanMurzak.McpPlugin": "8.6.0" },
+  "dbSchema": 1
+}

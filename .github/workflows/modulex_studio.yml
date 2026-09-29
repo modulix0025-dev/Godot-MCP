@@ -1,0 +1,160 @@
+name: ModuleX Studio
+
+# ModuleX Game Studio workspace (studio/). Fork-only; the upstream workflows are untouched.
+#   linux   — lint, format, typecheck, build and unit tests of every workspace package, including the
+#             compat.json parity test against the repo pins, and the multi-resolution icon check.
+#   windows — unit tests on Windows, then the desktop shell: Tauri 2 + NSIS (unsigned) installer with the
+#             bundled Node sidecar running the bundled Studio Core; silent install, then the installed app's
+#             `--selftest` (sidecar handshake, authenticated /health, cold start + RSS), then silent uninstall.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: modulex-studio-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Bundled sidecar runtime (Node LTS >= 22.14 is required by @baizor/gamedev-cli-core).
+  SIDECAR_NODE_VERSION: "22.20.0"
+
+jobs:
+  linux:
+    name: studio lint + typecheck + test (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+
+      - name: Build godot-cli (workspace dependency file:../../cli)
+        working-directory: cli
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install workspace
+        working-directory: studio
+        run: npm ci
+
+      - name: Lint
+        working-directory: studio
+        run: npm run lint
+
+      - name: Format check
+        working-directory: studio
+        run: npm run format:check
+
+      - name: Build (shared -> core -> worker -> ui)
+        working-directory: studio
+        run: npm run build
+
+      - name: Typecheck
+        working-directory: studio
+        run: npm run typecheck
+
+      - name: Unit tests (includes compat.json parity with the repo pins)
+        working-directory: studio
+        run: npm test
+
+      - name: Verify the multi-resolution Windows icon
+        run: python3 studio/branding/build-ico.py --verify studio/app/src-tauri/icons/icon.ico
+
+  windows:
+    name: studio tests + Tauri NSIS installer (windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: studio/app/src-tauri
+
+      - name: Build godot-cli
+        working-directory: cli
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install workspace + build packages
+        working-directory: studio
+        run: |
+          npm ci
+          npm run build
+
+      - name: Unit tests on Windows
+        working-directory: studio
+        run: npm test
+
+      - name: Fetch + verify the sidecar Node runtime (SHASUMS256, fail-closed)
+        run: |
+          $v = $env:SIDECAR_NODE_VERSION
+          $zip = "node-v$v-win-x64.zip"
+          Invoke-WebRequest "https://nodejs.org/dist/v$v/$zip" -OutFile $zip
+          Invoke-WebRequest "https://nodejs.org/dist/v$v/SHASUMS256.txt" -OutFile SHASUMS256.txt
+          $expected = (Select-String -Path SHASUMS256.txt -Pattern " $([regex]::Escape($zip))$").Line.Split(' ')[0]
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if (-not $expected -or $expected -ne $actual) { throw "node checksum mismatch ($actual vs $expected)" }
+          Expand-Archive $zip -DestinationPath node-dist
+          New-Item -ItemType Directory -Force studio/app/src-tauri/binaries | Out-Null
+          Copy-Item "node-dist/node-v$v-win-x64/node.exe" "studio/app/src-tauri/binaries/node-x86_64-pc-windows-msvc.exe"
+          Copy-Item "node-dist/node-v$v-win-x64/LICENSE" "studio/app/src-tauri/binaries/NODE_LICENSE.txt"
+
+      - name: Build the NSIS installer (unsigned)
+        working-directory: studio/app
+        run: npx tauri build --bundles nsis
+
+      - name: Locate the installer
+        id: installer
+        run: |
+          $exe = Get-ChildItem studio/app/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $exe) { throw "no NSIS installer produced" }
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "Installer: $($exe.Name) ($([math]::Round($exe.Length / 1MB, 1)) MB)"
+
+      - name: Silent install, self-test, silent uninstall
+        run: |
+          $setup = "${{ steps.installer.outputs.path }}"
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+          $app = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter 'ModuleX Game Studio.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $app) { throw "installed app not found under LOCALAPPDATA" }
+          "Installed at: $($app.DirectoryName)"
+          Get-ChildItem $app.DirectoryName -Recurse | Select-Object -ExpandProperty FullName
+          $report = Join-Path $env:RUNNER_TEMP 'modulex-selftest.json'
+          $t = Start-Process $app.FullName -ArgumentList '--selftest', $report -Wait -PassThru
+          Get-Content $report
+          if ($t.ExitCode -ne 0) { throw "self-test failed (exit $($t.ExitCode))" }
+          Copy-Item $report modulex-selftest.json
+          $uninstaller = Get-ChildItem $app.DirectoryName -Filter 'uninstall*.exe' | Select-Object -First 1
+          if ($uninstaller) {
+            $u = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+            "uninstaller exit code: $($u.ExitCode)"
+          }
+
+      - name: Upload installer + self-test report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: modulex-studio-windows
+          path: |
+            studio/app/src-tauri/target/release/bundle/nsis/*.exe
+            modulex-selftest.json
+          if-no-files-found: warn
+          retention-days: 7

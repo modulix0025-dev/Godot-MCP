@@ -468,3 +468,11 @@ obj/
 ## Agent memory (per the infra workspace convention — never commit nested agent-memory dirs)
 ##
 **/.claude/agent-memory/
+
+# ModuleX Game Studio (studio/) build outputs
+studio/**/node_modules/
+studio/**/dist/
+studio/app/src-tauri/target/
+studio/app/src-tauri/gen/
+studio/app/src-tauri/binaries/
+studio/**/coverage/
