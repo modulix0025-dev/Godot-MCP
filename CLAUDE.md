@@ -245,6 +245,30 @@ curl -s -X POST http://localhost:5300/api/system-tools/ping -H "Content-Type: ap
 
 This exact runbook was executed for issue #6 and observed green (clean boot + `pong`).
 
+## ModuleX Game Studio (fork additions)
+
+This fork adds ModuleX Game Studio on top of the upstream addon. It does not modify the upstream tool
+families. The plan and the evidence are in `docs/modulex/`: `ANALYSIS.md`, `EXECUTION_PROMPT.md`,
+`DECISIONS.md` (spike results and deviations; code wins over docs) and `PROGRESS.md` (per-phase gate output).
+
+- `addons/modulex_studio/` is a second Godot addon, namespace `ModuleX.Studio.*`.
+  - `Editor/Tools/Tool_Project`: five `project-*` tools.
+  - `Runtime/Tools/Tool_Game`: eight `game-*` QA tools. They refuse to run inside the editor.
+  - `Runtime/Qa/ModulexQaAutoload`: gated on `MODULEX_QA=1`, with an explicit tool set and no reflection or
+    console tools.
+  - `Common/`: pure helpers, unit-tested in `Godot-MCP.Tests`.
+  - It compiles in the `Godot-MCP.sln` gate, and the boundary guard scans its `Runtime/` + `Common/`. It is
+    NOT scanned by `skills-addon-parity` (that test covers `addons/godot_mcp` only).
+- The only upstream touch is `GodotMcpPlugin.ActiveConnection` (internal). Keep `addons/godot_mcp/` diffs
+  minimal and list each one in `DECISIONS.md`.
+- `Godot-Tests-Modulex/` + `scripts/modulex_qa_harness.py` (workflow `test_modulex_qa.yml`) is the live gate:
+  two token-mode servers (editor and playtest; one server cannot host both, see D-008), and a windowed game
+  under Xvfb.
+- `studio/` is the npm workspace for the desktop app (`cd studio && npm ci && npm test`).
+  - `studio/compat.json` is the single version manifest; a parity test enforces it against the pins above.
+  - The Tauri shell is in `studio/app/src-tauri`, gated by workflow `modulex_studio.yml` (Linux gate plus a
+    Windows NSIS installer job).
+
 ## Conventions
 
 - Root namespace `com.IvanMurzak.Godot.MCP` (reverse-domain, matches Unity-MCP / McpPlugin). New types

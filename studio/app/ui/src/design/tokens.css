@@ -1,0 +1,114 @@
+/* SPDX-License-Identifier: Apache-2.0
+ *
+ * ModuleX Game Studio design tokens (docs/modulex/ui/UI_DIRECTION.md §3).
+ * One source for colour, type, spacing, radius and motion. Components read ONLY these variables, so the
+ * dark/light themes and density modes are pure token swaps. Layout uses logical properties everywhere
+ * (inline-start/end), so dir="rtl" mirrors the UI without per-component overrides.
+ */
+
+:root {
+  /* Ink scale (neutral) */
+  --ink-0: #0b0d12;
+  --ink-1: #111420;
+  --ink-2: #161a27;
+  --ink-3: #1c2130;
+  --ink-4: #2a3145;
+  --ink-5: #3a4466;
+  --ink-6: #6e7689;
+  --ink-7: #a3aabb;
+  --ink-8: #d5dae3;
+  --ink-9: #f5f7fa;
+
+  /* Brand: ModuleX Cobalt */
+  --cobalt: #4c6fff;
+  --cobalt-strong: #3552e0;
+  --cobalt-soft: #8fa5ff;
+
+  /* Semantic */
+  --success: #2fb67c;
+  --warning: #e5a13a;
+  --danger: #e5484d;
+  --info: #3e9be0;
+  --running: #8b7cf6;
+
+  /* Type */
+  --font-ui: 'Inter Variable', 'IBM Plex Sans Arabic', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-ar: 'IBM Plex Sans Arabic', 'Inter Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --fs-12: 12px;
+  --fs-13: 13px; /* base (dense) */
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+
+  /* 4 px grid */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --row: 40px;
+  --rail: 56px;
+  --topbar: 48px;
+
+  /* Motion: state change + progress only; 120–180 ms ease-out */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --t-fast: 120ms;
+  --t-base: 180ms;
+}
+
+:root[data-density='dense'] {
+  --row: 32px;
+}
+
+/* Dark (default) */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: var(--ink-0);
+  --surface-1: var(--ink-1);
+  --surface-2: var(--ink-2);
+  --surface-3: var(--ink-3);
+  --border: rgb(255 255 255 / 0.08);
+  --border-strong: rgb(255 255 255 / 0.12);
+  --text: #e8ebf2;
+  --text-2: var(--ink-7);
+  --text-3: var(--ink-6);
+  --accent: var(--cobalt);
+  --accent-text: #ffffff;
+  --accent-tint: rgb(76 111 255 / 0.14);
+  --focus: var(--cobalt-soft);
+  --overlay-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: var(--ink-9);
+  --surface-1: #ffffff;
+  --surface-2: #f0f2f6;
+  --surface-3: #e7eaf0;
+  --border: rgb(11 13 18 / 0.08);
+  --border-strong: rgb(11 13 18 / 0.12);
+  --text: var(--ink-0);
+  --text-2: #4a5163;
+  --text-3: #7a8194;
+  --accent: var(--cobalt-strong);
+  --accent-text: #ffffff;
+  --accent-tint: rgb(76 111 255 / 0.1);
+  --focus: var(--cobalt);
+  --overlay-shadow: 0 12px 40px rgb(11 13 18 / 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-base: 0ms;
+  }
+}

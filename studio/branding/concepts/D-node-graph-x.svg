@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><title>Concept D - Node Graph X (not recommended)</title>
+<g stroke="#4C6FFF" stroke-width="56" stroke-linecap="round"><line x1="264" y1="264" x2="760" y2="760"/><line x1="760" y1="264" x2="264" y2="760"/></g>
+<g fill="#12151C" stroke="#8FA5FF" stroke-width="40"><circle cx="264" cy="264" r="104"/><circle cx="760" cy="264" r="104"/><circle cx="264" cy="760" r="104"/><circle cx="760" cy="760" r="104"/></g>
+<circle cx="512" cy="512" r="72" fill="#4C6FFF"/>
+</svg>

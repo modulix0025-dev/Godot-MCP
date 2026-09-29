@@ -308,7 +308,25 @@ On Windows, "Prepare iOS" can only validate and package a snapshot. The final ex
    handshakes, calls `/health`, records `shell_to_handshake_ms` and both RSS values);
 4. uninstalls silently.
 
-The numbers are recorded in `PROGRESS.md` once the job has run.
+**Windows result (VERIFIED, run 36558456489 on `windows-latest`).**
+
+| Measure | Value |
+|---|---|
+| NSIS installer | built, unsigned |
+| Silent install (`/S`) | exit 0, into `C:\Users\<user>\AppData\Local\ModuleX Game Studio\` |
+| Installed layout | `ModuleX Game Studio.exe`, `node.exe`, `core\modulex-core.mjs`, `uninstall.exe` |
+| Installed `--selftest` | `ok: true` |
+| Sidecar handshake (cold) | **119 ms** |
+| Authenticated `/health` | 200, all 16 `godot-cli` exports present |
+| Shell RSS | **9.5 MB** |
+| Sidecar (Node + Core) RSS | **42.9 MB** |
+| Silent uninstall | exit 0 |
+
+**Decision.** Keep Tauri 2 + a Node sidecar. There is no need for the Electron fallback.
+
+**Open item for Phase 13.** Tauri's per-user NSIS default installs to `%LOCALAPPDATA%\ModuleX Game Studio`.
+The plan asks for `%LOCALAPPDATA%\Programs\ModuleX Game Studio`, which needs a custom NSIS
+`INSTALLDIR`/template hook.
 
 **Shutdown.** Core exits when its stdin closes, so a crashed shell never leaves an orphaned sidecar. The
 shell also kills it on window destroy.
@@ -395,3 +413,17 @@ enforces it for the testbed.
 `build-ico.py` builds the Windows `.ico` from these three SVGs, so the 16/20/24 px entries use the
 hand-tuned variants. It covers every required size (16, 20, 24, 32, 40, 48, 64, 256) and `--verify` checks
 them in CI. The PNG sizes come from `tauri icon`.
+
+## D-022 · Phase 3 UI Direction Review (PENDING OWNER DECISION)
+
+The review package is [`ui/UI_DIRECTION.md`](ui/UI_DIRECTION.md). It contains:
+
+- the clickable prototype at `#/prototype`;
+- 58 screenshots: 9 screens × dark/light, 36 state variants, 3 Arabic RTL views and the command palette;
+- icon concepts A–D, with A recommended. Its 16 px trade-off versus B is stated explicitly.
+
+**Execution is stopped here, as the plan requires** (owner checkpoint 1). The owner's decision will be
+recorded below, and only then does production UI work start.
+
+- Owner decision: _pending_
+- Date: _pending_
