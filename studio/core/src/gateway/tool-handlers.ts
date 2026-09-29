@@ -21,9 +21,13 @@ import {
 } from '@modulex/shared';
 import type { ProjectRecord, StudioStore } from '../store/studio-store.js';
 import type { ApprovalImpact, Gateway } from './gateway.js';
+import type { SystemServices } from '../evolution/system.js';
+import { evolutionHandlers } from './evolution-handlers.js';
 
 export interface HandlerContext {
   gateway: Gateway;
+  /** System Evolution services (null when Core runs without a data directory, e.g. in some tests). */
+  system: SystemServices | null;
   store: StudioStore;
   caller: Caller;
   role: Role | null;
@@ -69,7 +73,7 @@ function mustProject(store: StudioStore, id: string): ProjectRecord {
 }
 
 /** Standard description footer: authorization + destructiveness, derived from the policy catalogue. */
-function footer(id: string, extra: string): string {
+export function footer(id: string, extra: string): string {
   const spec = TOOL_CATALOG.get(id)!;
   const auth: Record<string, string> = {
     read: 'Authorization: automatic (read-only).',
@@ -496,7 +500,7 @@ export function createHandlers(): Map<string, ToolHandler> {
       },
     },
   ];
-  return new Map(list.map((h) => [h.id, h]));
+  return new Map([...list, ...evolutionHandlers()].map((h) => [h.id, h]));
 }
 
 function selectAssets(p: ProjectRecord, a: Record<string, unknown>) {

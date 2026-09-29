@@ -12,9 +12,11 @@ import type { AddressInfo } from 'node:net';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { DevCapability } from '@modulex/shared';
+import type { ConfigDocId, DevCapability, Permission, RepairAction } from '@modulex/shared';
 import * as godotCli from 'godot-cli';
-import { STUDIO_CORE_VERSION } from './version.js';
+import { STUDIO_CORE_VERSION, STUDIO_VERSIONS } from './version.js';
+import { createSystem, type SystemServices } from './evolution/system.js';
+import type { SourceWorkspace, WorkflowTester } from './evolution/evolution-service.js';
 import { generateSessionToken } from './godot/server-args.js';
 import { AuditLog } from './audit/audit-log.js';
 import { Redactor } from './audit/secrets.js';
@@ -45,6 +47,11 @@ export interface CoreOptions {
   claudeDesktopToken?: string;
   auditPath?: string;
   storePath?: string;
+  /** Enables the System section (config, extensions, evolution, updates, Safe Mode). */
+  dataDir?: string;
+  source?: SourceWorkspace;
+  workflowTester?: WorkflowTester;
+  forceSafeMode?: boolean;
 }
 
 export interface CoreServer {
@@ -52,6 +59,7 @@ export interface CoreServer {
   handshake: Handshake;
   gateway: Gateway;
   redactor: Redactor;
+  system: SystemServices | null;
   close(): Promise<void>;
 }
 
@@ -92,7 +100,20 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
   const audit = new AuditLog(redactor, opts.auditPath);
   const store = new StudioStore(opts.storePath);
   const handlers = createHandlers();
-  const gateway = new Gateway({ audit, store, handlers });
+  const system = opts.dataDir
+    ? createSystem({
+        dataDir: opts.dataDir,
+        studioVersion: STUDIO_CORE_VERSION,
+        versions: STUDIO_VERSIONS,
+        audit,
+        redactor,
+        store,
+        source: opts.source,
+        workflowTester: opts.workflowTester,
+        forceSafeMode: opts.forceSafeMode,
+      })
+    : null;
+  const gateway = new Gateway({ audit, store, handlers, system });
   const startedAt = Date.now();
   let port = 0;
 
@@ -195,6 +216,10 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
         return send(res, 200, { broken_at: audit.verify() });
       if (req.method === 'POST' && url.pathname === '/claude-desktop/health-test')
         return send(res, 200, await claudeHealthTest());
+      if (system) {
+        const r = await systemRoute(system, req, url.pathname);
+        if (r) return send(res, r[0], r[1]);
+      }
       return send(res, 404, { error: 'not found' });
     } catch (e) {
       const err = e as { error?: unknown };
@@ -212,6 +237,7 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
     server,
     gateway,
     redactor,
+    system,
     handshake: {
       type: 'modulex-core-handshake',
       version: STUDIO_CORE_VERSION,
@@ -228,4 +254,87 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
         server.closeAllConnections();
       }),
   };
+}
+
+/**
+ * Owner-only System endpoints (Execution Patch 2 §6, §20–22, §31). Only the owner UI token reaches here. Evolution
+ * decisions carry the diff hash the owner saw; CRITICAL ones also carry the typed confirmation.
+ */
+async function systemRoute(sys: SystemServices, req: IncomingMessage, path: string): Promise<[number, unknown] | null> {
+  const post = req.method === 'POST';
+  const body = post ? (((await readJson(req)) as Record<string, unknown> | undefined) ?? {}) : {};
+  if (req.method === 'GET' && path === '/system') return [200, sys.status()];
+  if (req.method === 'GET' && path === '/evolutions') return [200, sys.evolution.history()];
+  if (post && path === '/evolutions')
+    return [200, sys.evolution.propose({ request: String(body.request ?? ''), by: 'owner-ui' })];
+  const evo = /^\/evolutions\/(evo_[a-z0-9-]+)(?:\/(diff|decision|deploy|rollback))?$/.exec(path);
+  if (evo) {
+    const [, id, action] = evo as unknown as [string, string, string | undefined];
+    if (req.method === 'GET' && !action) return [200, sys.evolution.get(id)];
+    if (req.method === 'GET' && action === 'diff') return [200, sys.evolution.diff(id)];
+    if (post && action === 'decision')
+      return [
+        200,
+        sys.evolution.decide(id, body.action === 'approve' ? 'approve' : 'reject', {
+          actor: 'owner-ui',
+          diff_sha256: String(body.diff_sha256 ?? ''),
+          confirm: body.confirm as string | undefined,
+          grants: (body.grants as Permission[] | undefined) ?? [],
+          reason: body.reason as string | undefined,
+        }),
+      ];
+    if (post && action === 'deploy') return [200, await sys.evolution.deploy(id, 'owner-ui')];
+    if (post && action === 'rollback')
+      return [200, sys.evolution.rollback(id, 'owner-ui', String(body.reason ?? 'owner rollback'))];
+  }
+  const cfg = /^\/config\/([a-z_]+)$/.exec(path);
+  if (cfg) {
+    const doc = cfg[1] as ConfigDocId;
+    if (req.method === 'GET') return [200, { ...sys.config.get(doc), history: sys.config.history(doc) }];
+    if (post)
+      return [
+        200,
+        sys.evolution.proposeConfig({
+          doc,
+          value: body.value,
+          reason: String(body.reason ?? 'owner change'),
+          by: 'owner-ui',
+        }),
+      ];
+  }
+  if (req.method === 'GET' && path === '/extensions')
+    return [200, { extensions: sys.extensions.list(), incoming: sys.extensions.incoming() }];
+  if (post && path === '/extensions/install')
+    return [200, await sys.evolution.proposeExtension({ package: String(body.package ?? ''), by: 'owner-ui' })];
+  const ext = /^\/extensions\/([a-z0-9-]+)\/(enable|disable)$/.exec(path);
+  if (post && ext) return [200, sys.extensions.setEnabled(ext[1]!, ext[2] === 'enable')];
+  if (req.method === 'GET' && path === '/diagnostics') return [200, await sys.diagnostics.run('owner-ui')];
+  if (post && path === '/repair')
+    return [
+      200,
+      await sys.diagnostics.repair(
+        body.action as RepairAction,
+        (body.target as string | undefined) ?? null,
+        'owner-ui',
+      ),
+    ];
+  if (req.method === 'GET' && path === '/updates')
+    return [200, { settings: sys.config.get('update_settings'), state: sys.updates.getState() }];
+  if (path === '/safe-mode') {
+    if (req.method === 'GET') return [200, sys.safeMode];
+    if (post && body.active === false) {
+      sys.updates.clearSafeModeCauses('owner-ui');
+      sys.extensions.setSafeMode(false);
+      sys.safeMode.active = false;
+      sys.safeMode.reasons = [];
+      return [200, sys.safeMode];
+    }
+    if (post && body.active === true) {
+      sys.extensions.setSafeMode(true);
+      sys.safeMode.active = true;
+      sys.safeMode.reasons = ['entered by the owner'];
+      return [200, sys.safeMode];
+    }
+  }
+  return null;
 }

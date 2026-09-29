@@ -137,8 +137,21 @@ pub fn run() {
                 .map_err(|e| e.to_string())?;
             let node = sidecar::node_path(&exe_dir());
             // Stable credentials from Windows Credential Manager; Core generates them on the first launch.
-            let env = credentials::core_env();
-            match sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &env) {
+            let mut env = credentials::core_env();
+            // %LOCALAPPDATA%\ModuleXGameStudio: audit log, store, config versions, extensions, evolution
+            // sandboxes and the install state that drives rollback and Safe Mode.
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                env.push(("MODULEX_DATA_DIR", dir.to_string_lossy().into_owned()));
+            }
+            // Safe Mode (Execution Patch 2 §21): if Core does not come up, start it once more with every non-core
+            // extension disabled and the last known-good configuration, so the owner can roll back or repair.
+            let spawned = sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &env).or_else(|e| {
+                eprintln!("[modulex] {e}; retrying in Safe Mode");
+                let mut safe = env.clone();
+                safe.push(("MODULEX_SAFE_MODE", "1".to_string()));
+                sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &safe)
+            });
+            match spawned {
                 Ok(sc) => {
                     for (name, value) in [
                         (credentials::AGENT_TOKEN, &sc.handshake.agent_token),

@@ -20,6 +20,7 @@ import {
 import type { AuditLog } from '../audit/audit-log.js';
 import type { StudioStore } from '../store/studio-store.js';
 import type { ToolHandler } from './tool-handlers.js';
+import type { SystemServices } from '../evolution/system.js';
 
 /** What the owner sees for an approval (Execution Patch 1 §48: What / Why / Scope / Files / Risk / Rollback). */
 export interface ApprovalImpact {
@@ -62,6 +63,8 @@ export interface GatewayOptions {
   handlers: ReadonlyMap<string, ToolHandler>;
   approvalTtlMs?: number;
   costThresholdUsd?: number;
+  /** System Evolution services; when present, the live `policy` configuration document drives approvals. */
+  system?: SystemServices | null;
   now?: () => Date;
 }
 
@@ -75,8 +78,10 @@ export class Gateway {
   private readonly ttl: number;
   private readonly costThreshold: number;
   private readonly now: () => Date;
+  readonly system: SystemServices | null;
 
   constructor(o: GatewayOptions) {
+    this.system = o.system ?? null;
     this.audit = o.audit;
     this.store = o.store;
     this.handlers = o.handlers;
@@ -118,13 +123,17 @@ export class Gateway {
     const claude = ctx.caller === 'claude-desktop';
     const projectId = typeof args.project_id === 'string' ? args.project_id : undefined;
     const handler = this.handlers.get(tool);
+    const policy = this.livePolicy();
+    const allowSet = new Set<string>(projectId ? (this.alwaysAllow.get(projectId) ?? []) : []);
+    for (const r of policy?.auto_approve ?? [])
+      if (r.projects === '*' || (projectId && r.projects.includes(projectId))) allowSet.add(r.tool);
     const decision = decide(tool, {
       caller: ctx.caller,
       role: ctx.role,
       devMode: this.devMode,
-      alwaysAllow: projectId ? this.alwaysAllow.get(projectId) : undefined,
+      alwaysAllow: allowSet.size ? allowSet : undefined,
       estimatedCostUsd: handler?.estimateCostUsd?.(args),
-      costThresholdUsd: this.costThreshold,
+      costThresholdUsd: policy?.cost_threshold_usd ?? this.costThreshold,
     });
     if (claude)
       this.audit.append('claude_tool_call', ctx.caller, {
@@ -199,6 +208,7 @@ export class Gateway {
     try {
       const out = await handler.run(input, {
         gateway: this,
+        system: this.system,
         store: this.store,
         caller: ctx.caller,
         role: ctx.role ?? null,
@@ -243,7 +253,9 @@ export class Gateway {
       requested_by: ctx.caller,
       role: ctx.role ?? null,
       created_at: created.toISOString(),
-      expires_at: new Date(created.getTime() + this.ttl).toISOString(),
+      expires_at: new Date(
+        created.getTime() + (this.livePolicy()?.approval_ttl_minutes ?? this.ttl / 60_000) * 60_000,
+      ).toISOString(),
       status: 'pending',
       impact,
       result: null,
@@ -349,6 +361,15 @@ export class Gateway {
         a.status = 'expired';
         this.audit.append('approval_expired', 'studio', { approval_id: a.approval_id, tool: a.tool });
       }
+    }
+  }
+
+  /** The live approval policy (Mode A configuration), or null when System services are not running. */
+  private livePolicy() {
+    try {
+      return this.system?.policy() ?? null;
+    } catch {
+      return null; // an invalid document never loosens policy: fall back to built-in defaults
     }
   }
 
