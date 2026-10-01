@@ -119,9 +119,11 @@ function cargoCrates(previous) {
     );
     const rows = new Map();
     for (const raw of out.split(/\r?\n/)) {
-      // `cargo tree` marks repeated subtrees with "(*)". Remove it wherever it lands: on Windows the line does not
-      // end with it (CI saw "MIT (*)" survive an end-anchored strip), so never rely on its position.
+      // `cargo tree` marks repeated subtrees with "(*)". On windows-latest the line also carries an invisible
+      // character before the marker that String.trim() keeps, so keep only printable ASCII and the tab (crate
+      // names, versions and SPDX expressions are ASCII), then drop the marker wherever it lands.
       const [p, l] = raw
+        .replace(/[^\t\x20-\x7e]/g, '')
         .replace(/\s*\(\*\)/g, '')
         .trim()
         .split('\t');
