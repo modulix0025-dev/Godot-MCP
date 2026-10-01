@@ -88,6 +88,28 @@ describe('Studio Core server', () => {
     }
   });
 
+  it('CORS: only the desktop UI origins get CORS headers; preflight answers without data', async () => {
+    core = await startCore();
+    const base = `http://127.0.0.1:${core.handshake.port}`;
+    const pre = await fetch(`${base}/projects`, {
+      method: 'OPTIONS',
+      headers: { origin: 'http://tauri.localhost', 'access-control-request-method': 'GET' },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe('http://tauri.localhost');
+    expect(pre.headers.get('access-control-allow-headers')).toMatch(/authorization/);
+    const evil = await fetch(`${base}/projects`, { method: 'OPTIONS', headers: { origin: 'https://evil.example' } });
+    expect(evil.status).toBe(403);
+    expect(evil.headers.get('access-control-allow-origin')).toBeNull();
+    const noToken = await fetch(`${base}/projects`, { headers: { origin: 'http://tauri.localhost' } });
+    expect(noToken.status).toBe(401);
+    const ok = await fetch(`${base}/projects`, {
+      headers: { origin: 'tauri://localhost', authorization: `Bearer ${core.handshake.token}` },
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('access-control-allow-origin')).toBe('tauri://localhost');
+  });
+
   it('owner endpoints refuse agent tokens', async () => {
     core = await startCore();
     const r = await fetch(`http://127.0.0.1:${core.handshake.port}/approvals`, {

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Production screens are built only after the Phase 3 UI Direction Review is approved. Until then the app
-// renders a placeholder, and the clickable review prototype lives at #/prototype.
+// The desktop app: the production UI (wired to Studio Core) everywhere, and the Phase 3 review prototype at
+// #/prototype for design reference and screenshot regression.
 import { useEffect, useState } from 'react';
 import { Prototype } from './prototype/Prototype';
+import { StudioApp } from './studio/StudioApp';
 
 export function App() {
   const [hash, setHash] = useState(() => (typeof window === 'undefined' ? '' : window.location.hash));
@@ -14,13 +15,5 @@ export function App() {
   }, []);
 
   if (hash.startsWith('#/prototype')) return <Prototype />;
-  return (
-    <main style={{ padding: 32, fontFamily: 'system-ui, sans-serif' }}>
-      <h1>ModuleX Game Studio</h1>
-      <p>Built with the Godot Engine (MIT).</p>
-      <p>
-        <a href="#/prototype/studio">Open the UI Direction Review prototype</a>
-      </p>
-    </main>
-  );
+  return <StudioApp />;
 }

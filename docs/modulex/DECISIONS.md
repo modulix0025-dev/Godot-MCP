@@ -1099,3 +1099,49 @@ or `@anthropic-ai/sdk`. The Phase 8 asset processing (`assets/process.ts`) and t
 exercised by tests, but no path from `main.ts` reaches them yet. They are listed under "declared but not bundled",
 and they move to the shipped section automatically once wired. Wiring the asset factory into
 `asset_generation`/`asset_processing`, behind a TRUSTED ComfyUI worker, is open work (see PROGRESS).
+
+## D-060 · The production UI: the approved design system, fed only with live Core data (DECIDED, built)
+
+**What.** `app/ui/src/studio/` is the production desktop UI. It reuses the approved Phase 3 design system unchanged:
+tokens, layout classes, components and icons. The shell is the same as the prototype: the icon rail, the top bar
+with the health cluster, the Dev Mode pill, the budget meter, the approvals badge, Ctrl+K, dark/light, and Arabic
+RTL. The screens are new and focused, and they read only Core's owner endpoints:
+
+- **Projects** · **Studio** (the 19-stage pipeline and the completion verdict) · **Activity** (the audit log)
+- **Assets** (provenance) · **Test & Debug** (the QA stages' evidence and recent errors)
+- **Builds** (with sha256) · **Workers** (ComfyUI trust, build workers, pairing) · **Approvals** (the owner decides)
+- **Setup Assistant** · **Settings** (appearance, budget, Developer Mode with a second confirmation)
+
+The review prototype stays at `#/prototype`, and its 65 tests are unchanged.
+
+**Rules.**
+
+- **Nothing is invented.** A field Core does not report is shown as "not reported". The health cluster is derived
+  only from `/health`, `/setup`, `/workers` and `/build-workers`.
+- **Errors are per endpoint.** Every endpoint is polled independently (2.5 s), so one failing request shows its own
+  error state with the evidence while the rest keeps working.
+- **The owner token.** It comes from the shell's `core_connection` command and lives only in memory: never in the
+  URL, storage or logs. `?core&token` works in `vite dev` only.
+- **CORS.** Core now answers CORS for the UI's exact origins only: `tauri://localhost`, `http(s)://tauri.localhost`
+  and `http://localhost:1420`. A preflight gets no data, other origins get 403, and every request still needs its
+  bearer.
+- **New owner endpoints, all read-only.** `GET /projects`, `GET /projects/:id`, `GET /workers` (secret refs
+  stripped) and `GET /budget`.
+
+**Tests.** 9 new UI tests against a fake Core with the real shapes:
+
+- live projects and pipeline;
+- the verdict shown verbatim;
+- an approval posted, and no "always allow" for Claude Desktop;
+- Setup installs, and the Android licence gate;
+- per-endpoint error states;
+- RTL persistence;
+- the Developer Mode double confirmation;
+- the health derivation;
+- route parsing that rejects traversal.
+
+Plus a Core CORS test.
+
+**Not yet.** These need agent-side APIs that do not exist yet: the Conversation panel (the chat with the ModuleX
+Agent, which is not reachable, D-030), the live editor Preview, and the 3D asset viewer. Their screens say so; they
+are not faked.

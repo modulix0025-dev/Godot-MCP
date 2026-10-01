@@ -37,7 +37,7 @@ import { createPipelineEngine, type PipelineHostConfig } from './pipeline/engine
 import { BuildJobs, listBuildWorkers, pairBuildWorker, type WritableVault } from './build/build-workers.js';
 import type { StudioDb } from './db/database.js';
 import type { StdioVault } from './audit/stdio-vault.js';
-import { Budget, type BudgetCaps } from './cost/budget.js';
+import { Budget, monthStart, type BudgetCaps } from './cost/budget.js';
 import { defaultTemplatesDir, SetupAssistant, type SetupAssistantOptions } from './setup/assistant.js';
 
 /** Proves the bundled sidecar carries the reused godot-cli library (Phase 0 spike 7). */
@@ -119,6 +119,14 @@ async function readJson(req: IncomingMessage, limit = 2_000_000): Promise<unknow
 }
 
 /** Start Core on 127.0.0.1 (random port unless `port` is given). */
+/** Origins of the desktop UI: Tauri 2's WebView (Windows serves http(s)://tauri.localhost) and `vite dev`. */
+export const UI_ORIGINS = new Set([
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  'http://localhost:1420',
+]);
+
 export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
   const tokens: Record<Principal, string> = {
     'owner-ui': opts.ownerToken ?? generateSessionToken(),
@@ -252,6 +260,20 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
 
   const server = createServer(async (req, res) => {
     try {
+      // CORS for the desktop UI only: the Tauri WebView's own origins (and the Vite dev server). Never a wildcard,
+      // and every request still needs its bearer token; a preflight carries no credentials and gets no data.
+      const origin = req.headers.origin;
+      if (origin && UI_ORIGINS.has(origin)) {
+        res.setHeader('access-control-allow-origin', origin);
+        res.setHeader('vary', 'origin');
+        res.setHeader('access-control-allow-headers', 'authorization, content-type');
+        res.setHeader('access-control-allow-methods', 'GET, POST');
+        res.setHeader('access-control-max-age', '600');
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(origin && UI_ORIGINS.has(origin) ? 204 : 403);
+        return res.end();
+      }
       const who = principalOf(req);
       if (!who) return send(res, 401, { error: 'unauthorized' });
       const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -311,6 +333,57 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
       if (req.method === 'GET' && url.pathname === '/audit') return send(res, 200, audit.list());
       if (req.method === 'GET' && url.pathname === '/audit/verify')
         return send(res, 200, { broken_at: audit.verify() });
+      // Read-only views for the owner UI (Phase 13). Owner-only; worker secret refs are never included.
+      if (url.pathname === '/projects' && req.method === 'GET')
+        return send(
+          res,
+          200,
+          store.listProjects().map((p) => {
+            const run = p.runs.at(-1) ?? null;
+            return {
+              project_id: p.project_id,
+              name: p.name,
+              created_at: p.created_at,
+              platforms: p.manifests.gameSpec?.platforms ?? [],
+              executing: pipeline?.isRunning(p.project_id) ?? false,
+              run: run
+                ? {
+                    run_id: run.run_id,
+                    stages: run.stages.map((s) => ({ stage: s.stage, status: s.status, reason: s.reason })),
+                    blocked: run.blocked,
+                    completion: run.completion ?? null,
+                  }
+                : null,
+              builds: p.builds,
+              spent_usd: db?.spent(p.project_id) ?? 0,
+            };
+          }),
+        );
+      const pr = /^\/projects\/([a-z0-9][a-z0-9-]{0,63})$/.exec(url.pathname);
+      if (pr && req.method === 'GET') {
+        const p = store.getProject(pr[1]!);
+        if (!p) return send(res, 404, { error: 'unknown project' });
+        return send(res, 200, {
+          ...p,
+          executing: pipeline?.isRunning(p.project_id) ?? false,
+          spent_usd: db?.spent(p.project_id) ?? 0,
+        });
+      }
+      if (url.pathname === '/budget' && req.method === 'GET') {
+        const caps = system?.config.get<BudgetCaps>('budgets').value ?? DEFAULT_CONFIG.budgets;
+        return send(res, 200, {
+          caps,
+          month_usd: db ? db.spentSince(null, monthStart(new Date())) : 0,
+          total_usd: db ? db.spent(null) : 0,
+          ledger: Boolean(db),
+        });
+      }
+      if (url.pathname === '/workers' && req.method === 'GET')
+        return send(
+          res,
+          200,
+          store.listWorkers().map(({ secret_ref: _secret, ...w }) => ({ ...w, has_credential: Boolean(_secret) })),
+        );
       if (url.pathname === '/setup' && req.method === 'GET') {
         if (!setup) return send(res, 503, { status: 'BLOCKED', error: 'no data directory' });
         const platforms =
