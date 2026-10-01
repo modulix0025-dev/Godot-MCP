@@ -239,7 +239,7 @@ export function StudioScreen(props: LiveProps) {
                   <li key={s.stage} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
                     <StatusDot tone={OUTCOME_TONE[s.status]} pulse={s.status === 'RUNNING'} />
                     <span style={{ minWidth: 180 }}>{stageLabel(s.stage)}</span>
-                    <span className="faint" style={{ fontSize: 12, minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <span className="faint" dir="auto" style={{ fontSize: 12, minWidth: 0, overflowWrap: 'anywhere' }}>
                       {s.status === 'PENDING' ? '' : s.status.replace('_', ' ').toLowerCase()}
                       {s.reason ? ` — ${s.reason}` : ''}
                     </span>
@@ -247,11 +247,20 @@ export function StudioScreen(props: LiveProps) {
                 ))}
               </ol>
             </Card>
-            <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0, overflowWrap: 'anywhere' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr)',
+                gap: 16,
+                alignContent: 'start',
+                minWidth: 0,
+                overflowWrap: 'anywhere',
+              }}
+            >
               <CompletionCard p={p} />
               {p.run.blocked && (
                 <Card title="Why it stopped">
-                  <p className="muted" style={{ margin: 0 }}>
+                  <p className="muted" dir="auto" style={{ margin: 0 }}>
                     {p.run.blocked.message}
                   </p>
                 </Card>
@@ -291,9 +300,13 @@ function CompletionCard({ p }: { p: ProjectSummary }) {
       ) : (
         <KeyValue
           rows={[
-            ...(c.failed.length ? ([['Failed', c.failed.join(', ')]] as [string, string][]) : []),
-            ...(c.missing.length ? ([['No evidence', c.missing.join(', ')]] as [string, string][]) : []),
-            ...c.notes.map((n) => ['Note', n] as [string, string]),
+            ...(c.failed.length
+              ? ([['Failed', <span dir="auto">{c.failed.join(', ')}</span>]] as [string, ReactNode][])
+              : []),
+            ...(c.missing.length
+              ? ([['No evidence', <span dir="auto">{c.missing.join(', ')}</span>]] as [string, ReactNode][])
+              : []),
+            ...c.notes.map((n) => ['Note', <span dir="auto">{n}</span>] as [string, ReactNode]),
           ]}
         />
       )}
@@ -309,7 +322,7 @@ function BuildList({ builds }: { builds: ProjectSummary['builds'] }) {
       </p>
     );
   return (
-    <table className="table">
+    <table className="table" style={{ tableLayout: 'fixed', width: '100%' }}>
       <tbody>
         {[...builds].reverse().map((b) => (
           <tr key={b.build_id}>
@@ -318,7 +331,12 @@ function BuildList({ builds }: { builds: ProjectSummary['builds'] }) {
             <td>
               <StatusPill tone={BUILD_TONE[b.status]}>{b.status.toLowerCase()}</StatusPill>
             </td>
-            <td className="mono faint" title={b.sha256 ?? b.note ?? undefined} style={{ overflowWrap: 'anywhere' }}>
+            <td
+              className="mono faint"
+              title={b.sha256 ?? b.note ?? undefined}
+              dir="auto"
+              style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}
+            >
               {b.sha256 ? `sha256 ${b.sha256.slice(0, 12)}…` : (b.note ?? '')}
             </td>
           </tr>
@@ -367,7 +385,11 @@ export function BuildsScreen({ t, snap, loaded, refresh, go }: LiveProps) {
                     </td>
                     <td className="num">{b.version}</td>
                     <td className="num muted">{b.size_bytes ? `${(b.size_bytes / 1048576).toFixed(1)} MB` : '—'}</td>
-                    <td className="mono faint" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+                    <td
+                      className="mono faint"
+                      dir="auto"
+                      style={{ fontSize: 12, overflowWrap: 'anywhere', whiteSpace: 'normal' }}
+                    >
                       {b.sha256 ?? b.note ?? ''}
                     </td>
                   </tr>

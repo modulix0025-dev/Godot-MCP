@@ -25,7 +25,7 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | 12 · Resumability, completion predicate, cost | **Done** (D-053) | GATE 12: kill at scene 17/30 → resumes at 17; kill mid-generation → 1 ComfyUI job; kill mid-build → 1 worker job; predicate tested over all 131,072 missing-evidence combinations |
 | 13 · Desktop app, Setup Assistant, installer, updates | **Mostly done.** Production UI (D-060), Setup Assistant (D-055), credential store bridge (D-056), code signing when the certificate exists (D-057), updater verification (D-058). Open: the updater restart handoff and the signing key (owner), shortcut/WebDriver install test, upgrade test. | Windows CI: both installers installed silently and self-tested; full installer `pipeline.available=true`, `qaTier=true`; `vault_ok=true` (a real Credential Manager round-trip) |
 | 14 · Self-test, docs, licences | **Licences done** (D-059). The self-test runs in CI. User documentation is open. | `licenses.test.ts`: the inventory matches the real bundle; no disallowed licence ships |
-| 15 | Not started. | — |
+| 15 · Acceptance with evidence | **In progress.** A live end-to-end run of the bundled Core: Claude Desktop creates a game; the pipeline creates, builds, playtests (10/10) and regression-tests it; the build is honestly BLOCKED (no templates on this host). Screenshots of the production UI on that run (D-061). | `docs/modulex/ui/production/*.png`; Windows builds and the smoke test in CI (GATE 6 and GATE 10) |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 

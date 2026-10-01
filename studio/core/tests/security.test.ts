@@ -226,6 +226,9 @@ describe('acceptance scenario #3 — "delete all generated assets" from Claude D
     expect(Object.keys(impact).sort()).toEqual(['files', 'risk', 'rollback', 'scope', 'what', 'why']);
     expect(impact.scope).toMatch(/ALL generated assets/);
     expect(impact.risk).toBe('high');
+    // The owner sees exactly the files that will move: the hostile path outside assets/generated/ is not listed.
+    expect(impact.files).toEqual(['res://assets/generated/prop/star/star.glb']);
+    expect(impact.scope).toMatch(/1 asset\(s\) outside res:\/\/assets\/generated\/ .* not touched/);
     expect(existsSync(join(dir, 'assets/generated/prop/star/star.glb'))).toBe(true); // nothing happened yet
 
     const listed = (await (await owner('/approvals')).json()) as { approval_id: string; status: string }[];

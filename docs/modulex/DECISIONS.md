@@ -1145,3 +1145,35 @@ Plus a Core CORS test.
 **Not yet.** These need agent-side APIs that do not exist yet: the Conversation panel (the chat with the ModuleX
 Agent, which is not reachable, D-030), the live editor Preview, and the 3D asset viewer. Their screens say so; they
 are not faked.
+
+## D-061 · Live end-to-end run of the bundled Core, and what it found (DECIDED, fixed)
+
+**The run.** On this Linux host, the production bundle (`core/dist/modulex-core.mjs`, exactly what the installer
+ships) ran with the shell's environment: Godot 4.5.1 mono, the 9.2.9 server, the addons and a projects root.
+
+- **Claude Desktop** (its pairing token, over `/mcp`) called `studio_game_create` with `SAMPLE_GAME_SPEC`.
+- **The pipeline ran in the background:**
+  - project creation, `godot --import` and `dotnet build`;
+  - scenes, then gameplay and static QA;
+  - the scripted **playtest through the QA tier**, all 10 default scenarios passing, windowed under Xvfb;
+  - the fix loop, with nothing to fix;
+  - regression.
+- **Then `build` stopped BLOCKED** with the exact fix. This host has no export templates.
+
+**The UI.** It ran in `vite dev` against that Core. The screenshots are in `docs/modulex/ui/production/` (12
+screens, plus light and Arabic RTL).
+
+**Defects found by the run, all fixed with tests:**
+
+1. **Playtest launched windowed with no display.** The game exited before connecting, the fix loop called it a
+   crash, and the run ended BLOCKED. Now it is windowed only on Windows or with `DISPLAY`; otherwise headless, and
+   screenshot steps are "skipped".
+2. **The build path never checked the export templates.** Missing templates produced a FAILED export blamed on
+   "C# assemblies missing". Now that is BLOCKED, with "install Export templates 4.5.1 (.NET) in the Setup
+   Assistant".
+3. **A BLOCKED build stage was reported as PARTIAL_SUCCESS**, and the run continued. It now stops the run.
+4. **The approval impact of `studio_asset_delete` listed scene files** (the procedural placeholders) that `run`
+   never moves. The owner would have decided on a false impact. It now lists only files under
+   `res://assets/generated/`, and the scope says which assets are only reset in the manifest.
+5. **UI layout and bidi.** Long hashes and paths overflowed the Studio columns, and English sentences rendered
+   with reordered punctuation inside the Arabic (RTL) layout.

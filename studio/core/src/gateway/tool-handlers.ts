@@ -420,13 +420,22 @@ export function createHandlers(): Map<string, ToolHandler> {
       impact: (a, store) => {
         const p = mustProject(store, a.project_id as string);
         const targets = selectAssets(p, a);
-        const files = targets.map((t) => t.res_path).filter((x): x is string => !!x);
+        // The impact lists exactly what `run` will move: only files under res://assets/generated/. Assets whose
+        // res_path is elsewhere (procedural placeholders living in scenes) are reset in the manifest, never moved.
+        const files = targets
+          .map((t) => t.res_path)
+          .filter((x): x is string => !!x && x.startsWith('res://assets/generated/'));
+        const kept = targets.filter((t) => t.res_path && !t.res_path.startsWith('res://assets/generated/')).length;
         return {
           what: `Delete ${targets.length} generated asset(s) from '${p.name}'`,
           why: String(a.reason),
-          scope: a.all
-            ? 'ALL generated assets of the project'
-            : `Assets: ${targets.map((t) => t.id).join(', ') || '(none matched)'}`,
+          scope:
+            (a.all
+              ? 'ALL generated assets of the project'
+              : `Assets: ${targets.map((t) => t.id).join(', ') || '(none matched)'}`) +
+            (kept
+              ? `; ${kept} asset(s) outside res://assets/generated/ (e.g. procedural placeholders in scenes) are only reset in the manifest — their files are not touched`
+              : ''),
           files,
           risk: a.all || targets.length > 5 ? 'high' : 'medium',
           rollback:
