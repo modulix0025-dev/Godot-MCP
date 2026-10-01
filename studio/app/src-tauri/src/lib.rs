@@ -37,6 +37,39 @@ fn core_connection(state: State<'_, CoreState>) -> Result<CoreInfo, String> {
     })
 }
 
+/// Copy-to-clipboard source for Settings → Claude Desktop: the stable pairing token the extension needs. It goes
+/// from the shell to the UI only on the owner's click, and the UI puts it on the clipboard without displaying it.
+#[tauri::command]
+fn claude_desktop_pairing_token(state: State<'_, CoreState>) -> Result<String, String> {
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    let sc = guard.as_ref().ok_or("Studio Core is not running")?;
+    if sc.handshake.claude_desktop_token.is_empty() {
+        return Err("Studio Core did not report a Claude Desktop pairing token".into());
+    }
+    Ok(sc.handshake.claude_desktop_token.clone())
+}
+
+/// Settings → Claude Desktop → "Show the extension file": select the bundled `.mcpb` in Explorer, so the owner can
+/// open it with Claude Desktop (which shows its own install dialog).
+#[tauri::command]
+fn reveal_claude_extension(app: tauri::AppHandle) -> Result<String, String> {
+    let file = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?
+        .join("claude-desktop")
+        .join("modulex-game-studio.mcpb");
+    if !file.is_file() {
+        return Err("the Claude Desktop extension is not bundled with this build".into());
+    }
+    #[cfg(windows)]
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{}", file.display()))
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(file.to_string_lossy().into_owned())
+}
+
 /// Bundled components (the full installer ships Godot 4.5.1 .NET and the MCP server under `engine/`; both installers
 /// ship the addon sources under `addons/`). Every variable is set only when the file really exists, so the small
 /// installer still reports the pipeline as unavailable until the Setup Assistant installs Godot.
@@ -218,7 +251,7 @@ pub fn run() {
             let mut env = credentials::core_env();
             // Core may store/resolve secrets at runtime through the shell (vault.rs), e.g. build worker tokens.
             env.push(("MODULEX_VAULT_BRIDGE", "1".to_string()));
-            // %LOCALAPPDATA%\ModuleXGameStudio: audit log, store, config versions, extensions, evolution
+            // %LOCALAPPDATA%\com.modulex.gamestudio (the app identifier): audit log, store, config versions, extensions, evolution
             // sandboxes and the install state that drives rollback and Safe Mode.
             if let Ok(dir) = app.path().app_local_data_dir() {
                 env.push(("MODULEX_DATA_DIR", dir.to_string_lossy().into_owned()));
@@ -265,7 +298,11 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![core_connection])
+        .invoke_handler(tauri::generate_handler![
+            core_connection,
+            claude_desktop_pairing_token,
+            reveal_claude_extension
+        ])
         .run(tauri::generate_context!())
         .expect("error while running ModuleX Game Studio");
 }

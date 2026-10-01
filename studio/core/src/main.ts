@@ -10,7 +10,7 @@
 //                                   handshake; the UI then shows "Claude Desktop: re-verify connection".
 //   MODULEX_AGENT_TOKEN             stable ModuleX Agent credential (from Credential Manager)
 //   MODULEX_CLAUDE_DESKTOP_TOKEN    stable Claude Desktop pairing credential (from Credential Manager)
-//   MODULEX_DATA_DIR                %LOCALAPPDATA%\ModuleXGameStudio (audit log, store, config, extensions,
+//   MODULEX_DATA_DIR                %LOCALAPPDATA%\com.modulex.gamestudio (audit log, store, config, extensions,
 //                                   evolution sandboxes, install state)
 //   MODULEX_SAFE_MODE=1             start in Safe Mode (the shell sets it after repeated failed starts)
 //   MODULEX_SOURCE_REPO             a git checkout of the Studio source whose checked-out branch is the

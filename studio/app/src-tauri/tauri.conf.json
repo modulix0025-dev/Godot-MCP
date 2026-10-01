@@ -41,7 +41,8 @@
       "../../workflows/": "workflows/",
       "../../../LICENSE": "licenses/LICENSE.txt",
       "../../../docs/modulex/THIRD_PARTY_LICENSES.md": "licenses/THIRD_PARTY_LICENSES.md",
-      "binaries/NODE_LICENSE.txt": "licenses/NODE_LICENSE.txt"
+      "binaries/NODE_LICENSE.txt": "licenses/NODE_LICENSE.txt",
+      "../../claude-desktop/dist/modulex-game-studio.mcpb": "claude-desktop/modulex-game-studio.mcpb"
     },
     "windows": {
       "webviewInstallMode": {

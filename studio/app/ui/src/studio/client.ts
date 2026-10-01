@@ -27,6 +27,13 @@ export async function discoverConnection(): Promise<CoreConnection | null> {
   return null;
 }
 
+/** Call one of the shell's commands (Tauri). Throws outside the desktop app. */
+export async function shellInvoke<T>(cmd: string, args?: unknown): Promise<T> {
+  const tauri = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
+  if (!tauri) throw new Error('only available in the ModuleX Game Studio app');
+  return (await tauri.invoke(cmd, args)) as T;
+}
+
 export class CoreError extends Error {
   constructor(
     readonly status: number,

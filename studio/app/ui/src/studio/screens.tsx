@@ -20,7 +20,7 @@ import {
 } from '../prototype/components';
 import type { Strings } from '../prototype/i18n';
 import type { Tone } from '../prototype/data';
-import type { CoreClient } from './client';
+import { shellInvoke, type CoreClient } from './client';
 import {
   BUILD_TONE,
   OUTCOME_TONE,
@@ -1024,6 +1024,7 @@ export function SettingsScreen({
           </button>
         )}
       </Card>
+      <ClaudeDesktopCard />
       <Card title="Version">
         <KeyValue rows={[['Studio Core', snap.health?.version ?? 'not reported']]} />
       </Card>
@@ -1032,3 +1033,52 @@ export function SettingsScreen({
 }
 
 export { CostBadge };
+
+/** Settings → Claude Desktop: install the bundled extension and pair it with this Studio (claude-integration.md). */
+function ClaudeDesktopCard() {
+  const [msg, setMsg] = useState<{ tone: Tone; text: string } | null>(null);
+  const reveal = async () => {
+    try {
+      const path = await shellInvoke<string>('reveal_claude_extension');
+      setMsg({
+        tone: 'success',
+        text: `Opened the folder of ${path.split(/[\\/]/).pop()}. Double-click it to install in Claude Desktop.`,
+      });
+    } catch (e) {
+      setMsg({ tone: 'danger', text: (e as Error).message });
+    }
+  };
+  const copyToken = async () => {
+    try {
+      const token = await shellInvoke<string>('claude_desktop_pairing_token');
+      await navigator.clipboard.writeText(token);
+      setMsg({
+        tone: 'success',
+        text: 'Pairing token copied. Paste it into the extension settings in Claude Desktop.',
+      });
+    } catch (e) {
+      setMsg({ tone: 'danger', text: (e as Error).message });
+    }
+  };
+  return (
+    <Card title="Claude Desktop">
+      <p className="muted" style={{ marginBlockStart: 0 }}>
+        Claude Desktop connects through the ModuleX extension and sees only the Agent-safe studio_* tools; destructive
+        actions it asks for wait here in Approvals.
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn" onClick={() => void reveal()}>
+          1 · Show the extension file
+        </button>
+        <button className="btn" onClick={() => void copyToken()}>
+          2 · Copy pairing token
+        </button>
+      </div>
+      {msg && (
+        <p style={{ marginBlockEnd: 0 }}>
+          <StatusPill tone={msg.tone}>{msg.text}</StatusPill>
+        </p>
+      )}
+    </Card>
+  );
+}

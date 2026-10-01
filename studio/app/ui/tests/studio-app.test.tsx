@@ -256,6 +256,33 @@ describe('production UI (live Core)', () => {
   });
 });
 
+describe('Settings → Claude Desktop', () => {
+  it('copies the pairing token from the shell to the clipboard without ever displaying it', async () => {
+    fakeCore();
+    const invoke = vi.fn(async (cmd: string) =>
+      cmd === 'claude_desktop_pairing_token'
+        ? 'PAIRING-TOKEN-VALUE-123'
+        : 'C:/app/claude-desktop/modulex-game-studio.mcpb',
+    );
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = { invoke };
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    try {
+      window.location.hash = '#/settings';
+      render(<StudioApp connection={conn} />);
+      await act(async () => fireEvent.click(await screen.findByText('2 · Copy pairing token')));
+      expect(writeText).toHaveBeenCalledWith('PAIRING-TOKEN-VALUE-123');
+      expect(document.body.textContent).not.toContain('PAIRING-TOKEN-VALUE-123');
+      expect(screen.getByText(/Pairing token copied/)).toBeTruthy();
+      await act(async () => fireEvent.click(screen.getByText('1 · Show the extension file')));
+      expect(invoke).toHaveBeenCalledWith('reveal_claude_extension', undefined);
+      expect(screen.getByText(/modulex-game-studio\.mcpb/)).toBeTruthy();
+    } finally {
+      delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    }
+  });
+});
+
 describe('health cluster and routing', () => {
   it('derives every signal from reported data only', () => {
     const none = healthSignals(EMPTY_SNAPSHOT);
