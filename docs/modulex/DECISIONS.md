@@ -1031,3 +1031,36 @@ installer are each signed.
 - **Without the secret.** The build is unsigned, with an explicit notice. Nothing is faked.
 
 The certificate never enters the repository (security.md §4).
+
+## D-058 · Updater: signed release feed, verified before anything runs (DECIDED, partly built)
+
+**Built.**
+
+- `evolution/minisign.ts` verifies minisign signatures on Node's own crypto (Ed25519, plus BLAKE2b-512 for the
+  prehashed `ED` form). It accepts Tauri's base64 wrapping. The trusted-comment global signature is always
+  checked.
+- `evolution/release-feed.ts` supplies `fetchFeed`, `download` and `verifySignature` to the Patch 2
+  `UpdateManager`:
+  - the feed and the installer download are size-capped;
+  - downloads must use https;
+  - the signature must be by the public key built into the app.
+- **No key configured means every update fails `verify`, before backup or install.** Checking never installs.
+  Applying is owner-only, and Stable is the default channel and never sees Beta.
+
+**Evidence.** The minisign fixtures were generated with an **independent implementation** (py-minisign). The tests
+cover:
+
+- prehashed and legacy signatures, accepted;
+- tampered bytes, a tampered trusted comment, a foreign key and garbage, all rejected;
+- a signed release that installs through `UpdateManager`;
+- a foreign signature or a missing key, which ends FAILED at `verify` with nothing installed.
+
+**Open (needs the owner).**
+
+1. **The update signing key pair.** The private key goes into CI secrets; the public key is built into the app.
+2. **Publishing the per-channel feed** from the release workflow.
+3. **The restart handoff to the shell.** An NSIS installer cannot replace the running app, so the shell must run
+   the verified installer and exit. The health check then runs on the next boot (`pending_health_check`).
+
+Until all three exist, the in-app updater stays disabled. That is the documented default: never automatic, and
+"check for updates" offers nothing it cannot verify.
