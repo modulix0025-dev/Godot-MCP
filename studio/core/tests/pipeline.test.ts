@@ -3,7 +3,7 @@
 // Phase 6/10 without a Godot binary: the deterministic game generator, the pipeline engine's ordering, halting,
 // resume and honest PARTIAL_SUCCESS reporting (fake executors / fake services), the Build Service's refusal paths,
 // and the studio_game_create → studio_pipeline_resume tool flow through the Gateway.
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -141,8 +141,24 @@ describe('build profiles', () => {
     expect(r.errors[0]).toMatch(/Android SDK/);
   });
 
+  it('missing export templates are BLOCKED with the Setup Assistant fix, before any export runs', async () => {
+    const r = await new BuildService({ godot: '/nonexistent/godot', templatesDir: tmp() }).build({
+      projectId: 'p',
+      projectDir: tmp(),
+      assembly: 'P',
+      platform: 'windows',
+      profile: 'RELEASE',
+      version: '0.1.0',
+    });
+    expect(r.status).toBe('BLOCKED');
+    expect(r.errors[0]).toMatch(/export templates are not installed/);
+    expect(r.note).toMatch(/Setup Assistant/);
+  });
+
   it('a Windows export whose assemblies are missing is FAILED even when Godot exits 0 (D-011)', async () => {
-    const r = await new BuildService({ godot: process.execPath }).build({
+    const templatesDir = tmp();
+    writeFileSync(join(templatesDir, 'windows_debug_x86_64.exe'), 'template');
+    const r = await new BuildService({ godot: process.execPath, templatesDir }).build({
       projectId: 'p',
       projectDir: tmp(),
       assembly: 'P',
@@ -323,6 +339,36 @@ describe('studio_game_create / studio_pipeline_resume', () => {
     ).toBe(true);
     const res = await gateway.call('studio_pipeline_resume', { project_id: id }, { caller: 'claude-desktop' });
     expect(res).toMatchObject({ status: 'SUCCESS', data: { executing: false, resumed_from: null } });
+  });
+});
+
+describe('build stage outcomes', () => {
+  it('a BLOCKED build (templates missing) stops the run with the fix; it is never a partial success', async () => {
+    const store = new StudioStore();
+    store.upsertFromSpec(spec());
+    const id = SAMPLE_GAME_SPEC.project.id;
+    store.setProjectPath(id, tmp());
+    const engine = engineFor(store, {});
+    const o = (engine as unknown as { o: { executors: Record<string, unknown>; builds: unknown } }).o;
+    delete o.executors.build;
+    o.builds = {
+      build: async () => ({
+        build_id: 'b_x',
+        platform: 'windows',
+        profile: 'QA',
+        status: 'BLOCKED',
+        artifacts: [],
+        errors: ['Godot export templates are not installed (missing …)'],
+        note: 'Install "Export templates 4.5.1 (.NET)" in the Setup Assistant, then resume.',
+        ms: 1,
+      }),
+    };
+    engine.start(id);
+    const run = await engine.execute(id);
+    const b = run.stages.find((s) => s.stage === 'build')!;
+    expect(b.status).toBe('BLOCKED');
+    expect(b.reason).toMatch(/export templates are not installed .* — Install "Export templates/);
+    expect(run.stages.find((s) => s.stage === 'export')!.status).toBe('PENDING');
   });
 });
 

@@ -232,14 +232,14 @@ export function StudioScreen(props: LiveProps) {
             />
           </Card>
         ) : (
-          <div className="grid" style={{ gridTemplateColumns: '2fr 1fr' }}>
+          <div className="grid" style={{ gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)' }}>
             <Card title="Pipeline" actions={<span className="faint mono">{p.run.run_id}</span>}>
               <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
                 {p.run.stages.map((s) => (
                   <li key={s.stage} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
                     <StatusDot tone={OUTCOME_TONE[s.status]} pulse={s.status === 'RUNNING'} />
                     <span style={{ minWidth: 180 }}>{stageLabel(s.stage)}</span>
-                    <span className="faint" style={{ fontSize: 12 }}>
+                    <span className="faint" style={{ fontSize: 12, minWidth: 0, overflowWrap: 'anywhere' }}>
                       {s.status === 'PENDING' ? '' : s.status.replace('_', ' ').toLowerCase()}
                       {s.reason ? ` — ${s.reason}` : ''}
                     </span>
@@ -247,7 +247,7 @@ export function StudioScreen(props: LiveProps) {
                 ))}
               </ol>
             </Card>
-            <div style={{ display: 'grid', gap: 16, alignContent: 'start' }}>
+            <div style={{ display: 'grid', gap: 16, alignContent: 'start', minWidth: 0, overflowWrap: 'anywhere' }}>
               <CompletionCard p={p} />
               {p.run.blocked && (
                 <Card title="Why it stopped">
@@ -318,7 +318,7 @@ function BuildList({ builds }: { builds: ProjectSummary['builds'] }) {
             <td>
               <StatusPill tone={BUILD_TONE[b.status]}>{b.status.toLowerCase()}</StatusPill>
             </td>
-            <td className="mono faint" title={b.sha256 ?? undefined}>
+            <td className="mono faint" title={b.sha256 ?? b.note ?? undefined} style={{ overflowWrap: 'anywhere' }}>
               {b.sha256 ? `sha256 ${b.sha256.slice(0, 12)}…` : (b.note ?? '')}
             </td>
           </tr>
@@ -367,7 +367,7 @@ export function BuildsScreen({ t, snap, loaded, refresh, go }: LiveProps) {
                     </td>
                     <td className="num">{b.version}</td>
                     <td className="num muted">{b.size_bytes ? `${(b.size_bytes / 1048576).toFixed(1)} MB` : '—'}</td>
-                    <td className="mono faint" style={{ fontSize: 12 }}>
+                    <td className="mono faint" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
                       {b.sha256 ?? b.note ?? ''}
                     </td>
                   </tr>

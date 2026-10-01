@@ -77,6 +77,8 @@ export interface BuildServiceOptions {
   iosSigningProfile?: string | null | (() => string | null);
   /** Pinned Godot version sent to workers (compat.json). */
   godotVersion?: string;
+  /** This Godot version's export templates folder (default: Godot's per-user location, D-055). */
+  templatesDir?: string;
 }
 
 export async function sha256File(path: string): Promise<string> {
@@ -265,6 +267,21 @@ export class BuildService {
         errors: ['Android SDK not configured'],
         note: 'Install the Android tools in Setup Assistant (JDK 17 + Android SDK).',
       });
+
+    // Requirement check BEFORE exporting: missing templates are a setup gap (BLOCKED, with the fix), not a failed
+    // export — otherwise Godot fails and the D-011 artifact check would blame the C# assemblies instead.
+    if (req.platform === 'windows') {
+      const t = (
+        await buildRequirements('windows', req.profile, { env: this.env(), templatesDir: this.o.templatesDir })
+      ).find((r) => r.id === 'export_templates');
+      if (t && !t.ok)
+        return finish({
+          status: 'BLOCKED',
+          artifacts: [],
+          errors: [`Godot export templates are not installed (${t.detail})`],
+          note: 'Install "Export templates 4.5.1 (.NET)" in the Setup Assistant, then resume.',
+        });
+    }
 
     const distributable = req.profile === 'RELEASE' || req.profile === 'PREVIEW';
     const source = distributable ? this.releaseSnapshot(req) : req.projectDir;

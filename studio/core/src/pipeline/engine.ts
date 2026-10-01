@@ -571,6 +571,13 @@ export class PipelineEngine {
     if (r.status === 'FAILED')
       return { status: 'FAILED', evidence: [summarise(r)], reason: r.errors[0] ?? 'build failed' };
     if (r.status === 'BUILT') return { status: 'SUCCESS', evidence: [summarise(r)] };
+    // Nothing playable was built (e.g. export templates missing): the run stops and says what to install.
+    if (r.status === 'BLOCKED')
+      return {
+        status: 'BLOCKED',
+        evidence: [summarise(r)],
+        reason: [r.errors[0], r.note].filter(Boolean).join(' — ') || 'build blocked',
+      };
     return { status: 'PARTIAL_SUCCESS', evidence: [summarise(r)], reason: r.note ?? r.errors[0] ?? r.status };
   }
 
