@@ -114,16 +114,28 @@ function cargoCrates(previous) {
   try {
     const out = execFileSync(
       'cargo',
-      ['tree', '-e', 'normal', '--target', 'x86_64-pc-windows-msvc', '--prefix', 'none', '-f', '{p}\t{l}'],
+      [
+        'tree',
+        '--color',
+        'never',
+        '-e',
+        'normal',
+        '--target',
+        'x86_64-pc-windows-msvc',
+        '--prefix',
+        'none',
+        '-f',
+        '{p}\t{l}',
+      ],
       { cwd: join(studio, 'app/src-tauri'), encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
     const rows = new Map();
     for (const raw of out.split(/\r?\n/)) {
-      // `cargo tree` marks repeated subtrees with "(*)". On windows-latest the line also carries an invisible
-      // character before the marker that String.trim() keeps, so keep only printable ASCII and the tab (crate
-      // names, versions and SPDX expressions are ASCII), then drop the marker wherever it lands.
+      // `cargo tree` marks repeated subtrees with "(*)". CI sets CARGO_TERM_COLOR=always, which wraps the marker in
+      // ANSI colour codes; `--color never` stops that, and any escape sequence left is removed before parsing.
       const [p, l] = raw
-        .replace(/[^\t\x20-\x7e]/g, '')
+        // eslint-disable-next-line no-control-regex -- matching ANSI escape sequences is the point
+        .replace(/\x1b\[[0-9;]*m/g, '')
         .replace(/\s*\(\*\)/g, '')
         .trim()
         .split('\t');
