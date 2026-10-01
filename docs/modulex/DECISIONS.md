@@ -1177,3 +1177,34 @@ screens, plus light and Arabic RTL).
    `res://assets/generated/`, and the scope says which assets are only reset in the manifest.
 5. **UI layout and bidi.** Long hashes and paths overflowed the Studio columns, and English sentences rendered
    with reordered punctuation inside the Arabic (RTL) layout.
+
+## D-062 · Studio Core starts in the background; startup failures are shown, logged and retryable (DECIDED, built)
+
+**The report.** On the owner's Windows PC, the installed app stayed on "Connecting to Studio Core…" for 15 minutes.
+
+**The causes in the app.**
+
+1. **The error was hidden.** Tauri rejects a command with a plain string, but the UI read `e.message` from it. That
+   is `undefined`, so the screen fell back to "Connecting…" forever and the real error never showed.
+2. **There was no log.** Core's stderr was inherited by a GUI process that has no console, so it was lost.
+3. **The self-test did not run the GUI's configuration.** It started Core without the data directory and the
+   stored credentials, so a GUI-only failure could pass CI.
+
+The startup failure on that PC itself is not reproduced. Linux runs of the bundle with the GUI's exact
+environment hand off in 0.25 s: first run, no data folder yet, and stored tokens. The changes below make the next
+occurrence show its cause.
+
+**The changes.**
+
+- The shell starts Core on a background thread. `core_connection` returns `starting` (with elapsed seconds),
+  `ready` or `failed` (with the error and the log path). A new `restart_core` command backs **Retry**.
+- The handshake timeout goes from 20 s to 90 s, because a first-launch antivirus scan of the unsigned bundle can be
+  slow. If Core exits before its handshake, that is reported at once ("exited during startup (exit code)"), not
+  after the timeout.
+- Core's stderr and the shell's startup errors go to `logs\core.log` in the app data folder. The file starts over
+  past 5 MB, and it holds no tokens.
+- The UI polls while Core is starting. On failure it shows the error, the log path, **Retry** and **Copy
+  diagnostics**, and any rejection value is converted to text.
+- One function, `core_environment`, builds Core's environment for both the GUI and `--selftest`. The Windows CI
+  self-test now also asserts that the log was written.
+

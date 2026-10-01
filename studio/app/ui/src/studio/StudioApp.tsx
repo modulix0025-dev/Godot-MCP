@@ -28,7 +28,7 @@ import {
   IconWorkers,
   KeystoneMark,
 } from '../prototype/icons';
-import { CoreClient, discoverConnection, type CoreConnection } from './client';
+import { bootStatus, CoreClient, errorText, shellInvoke, type CoreBoot, type CoreConnection } from './client';
 import {
   ActivityScreen,
   ApprovalsScreen,
@@ -157,15 +157,41 @@ export function healthSignals(s: Snapshot): { key: string; label: string; tone: 
 
 export function StudioApp({ connection }: { connection?: CoreConnection | null }) {
   const [conn, setConn] = useState<CoreConnection | null>(connection ?? null);
-  const [connError, setConnError] = useState<string | null>(null);
+  const [boot, setBoot] = useState<CoreBoot>({ status: 'starting', elapsedS: 0 });
+  const [attempt, setAttempt] = useState(0);
+  // Core starts in the background: poll the shell until it is ready or reports why it failed.
   useEffect(() => {
     if (conn) return;
-    discoverConnection()
-      .then((c) =>
-        c ? setConn(c) : setConnError('Studio Core connection is only available inside the ModuleX Game Studio app.'),
-      )
-      .catch((e: Error) => setConnError(e.message));
-  }, [conn]);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      let b: CoreBoot;
+      try {
+        b = await bootStatus();
+      } catch (e) {
+        b = { status: 'failed', error: errorText(e), log: null };
+      }
+      if (stopped) return;
+      if (b.status === 'ready') setConn(b.connection);
+      else setBoot(b);
+      if (b.status === 'starting') timer = setTimeout(() => void tick(), 1000);
+    };
+    void tick();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [conn, attempt]);
+  const retry = useCallback(async () => {
+    setBoot({ status: 'starting', elapsedS: 0 });
+    try {
+      await shellInvoke('restart_core');
+    } catch (e) {
+      setBoot({ status: 'failed', error: errorText(e), log: null });
+      return;
+    }
+    setAttempt((a) => a + 1);
+  }, []);
   const client = useMemo(() => (conn ? new CoreClient(conn) : null), [conn]);
   const { snap, loaded, refresh } = useSnapshot(client);
 
@@ -206,14 +232,7 @@ export function StudioApp({ connection }: { connection?: CoreConnection | null }
     window.location.hash = `#/${screen}${projectId ? `/${projectId}` : ''}`;
   }, []);
 
-  if (!client)
-    return (
-      <main className="mx-page" style={{ padding: 32 }}>
-        <h1>ModuleX Game Studio</h1>
-        <p className="muted">{connError ?? 'Connecting to Studio Core…'}</p>
-        <p className="faint">Built with the Godot Engine (MIT).</p>
-      </main>
-    );
+  if (!client) return <BootScreen boot={boot} onRetry={() => void retry()} />;
 
   const props: LiveProps = { t, snap, loaded, client, refresh, projectId: route.projectId, go };
   const pending = (snap.approvals ?? []).filter((a) => a.status === 'pending').length;
@@ -413,5 +432,64 @@ function Palette({
         </div>
       ))}
     </div>
+  );
+}
+
+/** Before Studio Core answers: its startup progress, or why it did not start (with the log) and a retry. */
+export function BootScreen({ boot, onRetry }: { boot: CoreBoot; onRetry: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <main className="mx-page" style={{ padding: 32, maxWidth: 880 }}>
+      <h1>ModuleX Game Studio</h1>
+      {boot.status === 'starting' && (
+        <>
+          <p className="muted">
+            Starting Studio Core…{boot.elapsedS > 0 ? ` (${boot.elapsedS} s)` : ''}
+            <br />
+            <span dir="rtl">جاري تشغيل Studio Core…</span>
+          </p>
+          {boot.elapsedS >= 20 && (
+            <p className="faint">
+              The first launch can take up to a minute while Windows scans the app. If it fails, this screen shows why.
+            </p>
+          )}
+        </>
+      )}
+      {boot.status === 'failed' && (
+        <section role="alert">
+          <h2>Studio Core did not start</h2>
+          <p dir="rtl">Studio Core ما اشتغلش. السبب تحت، والتفاصيل في ملف الـ log.</p>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} dir="ltr">
+            {boot.error}
+          </pre>
+          {boot.log && (
+            <p className="muted" dir="ltr" style={{ overflowWrap: 'anywhere' }}>
+              Log: <code>{boot.log}</code>
+            </p>
+          )}
+          <p style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn--primary" onClick={onRetry}>
+              Retry
+            </button>
+            <button
+              className="btn"
+              onClick={() =>
+                void navigator.clipboard
+                  ?.writeText(
+                    `ModuleX Game Studio: Studio Core did not start\n${boot.error}\nLog: ${boot.log ?? 'n/a'}`,
+                  )
+                  .then(() => setCopied(true))
+              }
+            >
+              {copied ? 'Copied' : 'Copy diagnostics'}
+            </button>
+          </p>
+        </section>
+      )}
+      {boot.status === 'outside' && (
+        <p className="muted">Studio Core connection is only available inside the ModuleX Game Studio app.</p>
+      )}
+      <p className="faint">Built with the Godot Engine (MIT).</p>
+    </main>
   );
 }

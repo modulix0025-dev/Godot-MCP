@@ -88,6 +88,8 @@ The shell bridge is `credentials.rs`, using the `keyring` crate's native Windows
 - The installed self-test proves a store, read-back and delete round-trip in Credential Manager on every Windows
   CI run.
 - The UI flows that write the Claude API key arrive with the production Settings screens.
+- **Core's log** (`%LOCALAPPDATA%\com.modulex.gamestudio\logs\core.log`, D-062) holds only Core's stderr and the
+  shell's startup errors. Tokens never go there: the handshake travels on stdout and vault traffic on stdin/stdout.
 
 **Code signing (Phase 13, D-057).** The Authenticode certificate is the owner's.
 

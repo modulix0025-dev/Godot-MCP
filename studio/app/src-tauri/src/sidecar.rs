@@ -45,14 +45,75 @@ pub fn node_path(exe_dir: &Path) -> PathBuf {
     exe_dir.join(name)
 }
 
-pub fn spawn(node: &Path, core_script: &Path, timeout: Duration, env: &[(&str, String)]) -> Result<Sidecar, String> {
+/// Open Core's log for appending (a GUI app has no console, so an inherited stderr is lost). The file is started
+/// over when it passes 5 MB. Core writes no secrets to stderr: tokens travel only on stdout (handshake) and stdin.
+pub fn open_log(path: &Path) -> Option<std::fs::File> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).ok()?;
+    }
+    let too_big = std::fs::metadata(path)
+        .map(|m| m.len() > 5 * 1024 * 1024)
+        .unwrap_or(false);
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(!too_big)
+        .write(true)
+        .truncate(too_big)
+        .open(path)
+        .ok()?;
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = writeln!(
+        f,
+        "---- ModuleX Game Studio {} starting Studio Core (unix time {secs})",
+        env!("CARGO_PKG_VERSION")
+    );
+    Some(f)
+}
+
+/// Append one line from the shell itself to Core's log.
+pub fn log_line(path: &Path, msg: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "[shell] {msg}");
+    }
+}
+
+pub fn spawn(
+    node: &Path,
+    core_script: &Path,
+    timeout: Duration,
+    env: &[(&str, String)],
+    log: Option<&Path>,
+) -> Result<Sidecar, String> {
     let started = Instant::now();
+    if !node.is_file() {
+        return Err(format!(
+            "the bundled Node runtime is missing: {}",
+            node.display()
+        ));
+    }
+    if !core_script.is_file() {
+        return Err(format!(
+            "the Studio Core bundle is missing: {}",
+            core_script.display()
+        ));
+    }
     let mut cmd = Command::new(node);
     cmd.envs(env.iter().map(|(k, v)| (*k, v.as_str())));
+    let stderr = match log.and_then(open_log) {
+        Some(f) => Stdio::from(f),
+        None => Stdio::inherit(),
+    };
     cmd.arg(core_script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(stderr);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -81,13 +142,24 @@ pub fn spawn(node: &Path, core_script: &Path, timeout: Duration, env: &[(&str, S
                 Ok(_) => {}
             }
             if let Some(resp) = crate::vault::handle_line(line.trim()) {
-                if writeln!(stdin, "{resp}").and_then(|_| stdin.flush()).is_err() {
+                if writeln!(stdin, "{resp}")
+                    .and_then(|_| stdin.flush())
+                    .is_err()
+                {
                     break;
                 }
             }
         }
     });
     let line = match rx.recv_timeout(timeout) {
+        Ok(l) if l.trim().is_empty() => {
+            // stdout closed before the handshake: Core exited (its error is in the log).
+            let status = child
+                .wait()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|e| e.to_string());
+            return Err(format!("Studio Core exited during startup ({status})"));
+        }
         Ok(l) => l,
         Err(_) => {
             let _ = child.kill();
@@ -102,7 +174,11 @@ pub fn spawn(node: &Path, core_script: &Path, timeout: Duration, env: &[(&str, S
         let _ = child.kill();
         return Err("unexpected Studio Core handshake type".into());
     }
-    Ok(Sidecar { child, handshake, handshake_ms: started.elapsed().as_millis() })
+    Ok(Sidecar {
+        child,
+        handshake,
+        handshake_ms: started.elapsed().as_millis(),
+    })
 }
 
 /// Minimal authenticated GET against Core (std only; Core is loopback-only HTTP/1.1).

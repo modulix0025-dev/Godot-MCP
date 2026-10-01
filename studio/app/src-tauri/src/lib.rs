@@ -14,35 +14,87 @@ use std::time::{Duration, Instant};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::{Manager, State};
 
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long Core may take to hand off. Generous: on a first launch Windows Defender scans the bundled Node runtime
+/// and Core bundle before they run, which can take tens of seconds on a slow disk.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 
-struct CoreState(Mutex<Option<sidecar::Sidecar>>);
+/// The app identifier: Tauri's app_local_data_dir is %LOCALAPPDATA%\<identifier> on Windows.
+const APP_IDENTIFIER: &str = "com.modulex.gamestudio";
 
-#[derive(Serialize)]
-struct CoreInfo {
-    port: u16,
-    token: String,
-    version: String,
+enum CoreStatus {
+    Idle,
+    Starting(Instant),
+    Ready(sidecar::Sidecar),
+    Failed(String),
 }
 
-/// The UI's only privileged command: where Studio Core listens and the session token to talk to it.
+struct CoreState {
+    status: Mutex<CoreStatus>,
+    /// Core's stderr and the shell's startup errors (shown to the owner when Core does not start).
+    log: Mutex<Option<PathBuf>>,
+}
+
+/// What the UI gets from `core_connection`. Never the agent or Claude Desktop tokens.
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+enum CoreInfo {
+    Starting {
+        elapsed_s: u64,
+    },
+    Ready {
+        port: u16,
+        token: String,
+        version: String,
+    },
+    Failed {
+        error: String,
+        log: Option<String>,
+    },
+}
+
+/// The UI's only privileged command: whether Studio Core is up, and if so where it listens and the owner session
+/// token. While Core is starting the UI polls; if it failed, the UI shows the error and where the log is.
 #[tauri::command]
 fn core_connection(state: State<'_, CoreState>) -> Result<CoreInfo, String> {
-    let guard = state.0.lock().map_err(|e| e.to_string())?;
-    let sc = guard.as_ref().ok_or("Studio Core is not running")?;
-    Ok(CoreInfo {
-        port: sc.handshake.port,
-        token: sc.handshake.token.clone(),
-        version: sc.handshake.version.clone(),
+    let log = state
+        .log
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
+    let guard = state.status.lock().map_err(|e| e.to_string())?;
+    Ok(match &*guard {
+        CoreStatus::Idle => CoreInfo::Starting { elapsed_s: 0 },
+        CoreStatus::Starting(t) => CoreInfo::Starting {
+            elapsed_s: t.elapsed().as_secs(),
+        },
+        CoreStatus::Ready(sc) => CoreInfo::Ready {
+            port: sc.handshake.port,
+            token: sc.handshake.token.clone(),
+            version: sc.handshake.version.clone(),
+        },
+        CoreStatus::Failed(e) => CoreInfo::Failed {
+            error: e.clone(),
+            log,
+        },
     })
+}
+
+/// "Retry" on the startup error screen: start Core again (no-op while it is starting).
+#[tauri::command]
+fn restart_core(app: tauri::AppHandle) -> Result<(), String> {
+    start_core(&app);
+    Ok(())
 }
 
 /// Copy-to-clipboard source for Settings → Claude Desktop: the stable pairing token the extension needs. It goes
 /// from the shell to the UI only on the owner's click, and the UI puts it on the clipboard without displaying it.
 #[tauri::command]
 fn claude_desktop_pairing_token(state: State<'_, CoreState>) -> Result<String, String> {
-    let guard = state.0.lock().map_err(|e| e.to_string())?;
-    let sc = guard.as_ref().ok_or("Studio Core is not running")?;
+    let guard = state.status.lock().map_err(|e| e.to_string())?;
+    let CoreStatus::Ready(sc) = &*guard else {
+        return Err("Studio Core is not running".into());
+    };
     if sc.handshake.claude_desktop_token.is_empty() {
         return Err("Studio Core did not report a Claude Desktop pairing token".into());
     }
@@ -106,6 +158,103 @@ fn bundled_env(resources: &std::path::Path, home: Option<PathBuf>) -> Vec<(&'sta
     env
 }
 
+/// Core's environment, identical for the GUI and `--selftest`: stored credentials, the credential store bridge, the
+/// data directory and the bundled components. One function, so the self-test proves what the app really runs.
+fn core_environment(
+    resources: &std::path::Path,
+    home: Option<PathBuf>,
+    data_dir: Option<&std::path::Path>,
+) -> Vec<(&'static str, String)> {
+    // Stable credentials from Windows Credential Manager; Core generates them on the first launch.
+    let mut env = credentials::core_env();
+    // Core may store/resolve secrets at runtime through the shell (vault.rs), e.g. build worker tokens.
+    env.push(("MODULEX_VAULT_BRIDGE", "1".to_string()));
+    // %LOCALAPPDATA%\com.modulex.gamestudio: audit log, store, config versions, extensions, evolution sandboxes and
+    // the install state that drives rollback and Safe Mode.
+    if let Some(dir) = data_dir {
+        env.push(("MODULEX_DATA_DIR", dir.to_string_lossy().into_owned()));
+    }
+    env.extend(bundled_env(resources, home));
+    env
+}
+
+fn core_log_path(data_dir: &std::path::Path) -> PathBuf {
+    data_dir.join("logs").join("core.log")
+}
+
+/// Start Core on a background thread so the window stays responsive; the UI polls `core_connection`.
+fn start_core(app: &tauri::AppHandle) {
+    let state = app.state::<CoreState>();
+    {
+        let mut g = state.status.lock().unwrap();
+        if matches!(*g, CoreStatus::Starting(_)) {
+            return; // a start is already in flight
+        }
+        // Dropping a previous Sidecar (a "Retry" after Ready is not offered, but be safe) kills that Core first.
+        *g = CoreStatus::Starting(Instant::now());
+    }
+    let script = app
+        .path()
+        .resource_dir()
+        .map(|d| d.join("core").join("modulex-core.mjs"));
+    let resources = app.path().resource_dir().ok();
+    let data_dir = app.path().app_local_data_dir().ok();
+    let home = app.path().home_dir().ok();
+    let log = data_dir.as_deref().map(core_log_path);
+    *state.log.lock().unwrap() = log.clone();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let result = (|| {
+            let script = script.map_err(|e| format!("resource folder unavailable: {e}"))?;
+            let resources = resources.ok_or("resource folder unavailable")?;
+            let node = sidecar::node_path(&exe_dir());
+            let env = core_environment(&resources, home, data_dir.as_deref());
+            // Safe Mode (Execution Patch 2 §21): if Core does not come up, start it once more with every non-core
+            // extension disabled and the last known-good configuration, so the owner can roll back or repair.
+            sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &env, log.as_deref()).or_else(
+                |first| {
+                    if let Some(l) = &log {
+                        sidecar::log_line(l, &format!("{first}; retrying in Safe Mode"));
+                    }
+                    let mut safe = env.clone();
+                    safe.push(("MODULEX_SAFE_MODE", "1".to_string()));
+                    sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &safe, log.as_deref())
+                        .map_err(|second| format!("{first}. Safe Mode: {second}"))
+                },
+            )
+        })();
+        let state = app.state::<CoreState>();
+        match result {
+            Ok(sc) => {
+                for (name, value) in [
+                    (credentials::AGENT_TOKEN, &sc.handshake.agent_token),
+                    (
+                        credentials::CLAUDE_DESKTOP_TOKEN,
+                        &sc.handshake.claude_desktop_token,
+                    ),
+                ] {
+                    if !value.is_empty()
+                        && credentials::get(name).as_deref() != Some(value.as_str())
+                    {
+                        if let Err(e) = credentials::set(name, value) {
+                            if let Some(l) = &log {
+                                sidecar::log_line(l, &e);
+                            }
+                        }
+                    }
+                }
+                *state.status.lock().unwrap() = CoreStatus::Ready(sc);
+            }
+            Err(e) => {
+                if let Some(l) = &log {
+                    sidecar::log_line(l, &format!("Studio Core did not start: {e}"));
+                }
+                *state.status.lock().unwrap() = CoreStatus::Failed(e);
+            }
+        }
+    });
+}
+
 fn exe_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
@@ -134,6 +283,8 @@ struct SelfTestReport {
     /// Windows; null where the OS has no credential store here.
     vault_ok: Option<bool>,
     vault_detail: serde_json::Value,
+    /// Where Core's stderr went (the same file the GUI uses).
+    core_log: Option<String>,
 }
 
 /// `--selftest <out.json>`: resolve the bundled Node + Core exactly as the GUI does, handshake, call
@@ -153,6 +304,7 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
         platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
         vault_ok: None,
         vault_detail: serde_json::Value::Null,
+        core_log: None,
     };
     // The same bundled components the GUI passes (engine/, addons/), so the report proves what Core will run with:
     // the full installer must report `pipeline.available` and `pipeline.qaTier` in the health body.
@@ -164,9 +316,16 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from);
-    let mut env = bundled_env(&resources, home);
-    env.push(("MODULEX_VAULT_BRIDGE", "1".to_string()));
-    match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT, &env) {
+    // Exactly the GUI's environment (core_environment), including the data directory and stored credentials, and
+    // the same log file, so a GUI-only startup failure cannot pass the self-test.
+    let data_dir = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join(APP_IDENTIFIER);
+    let log = core_log_path(&data_dir);
+    report.core_log = Some(log.to_string_lossy().into_owned());
+    let env = core_environment(&resources, home, Some(&data_dir));
+    match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT, &env, Some(&log)) {
         Ok(sc) => {
             report.shell_to_handshake_ms = started.elapsed().as_millis();
             report.sidecar_handshake_ms = sc.handshake_ms;
@@ -180,7 +339,8 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
             }
             match sidecar::core_post(&sc.handshake, "/vault/selftest") {
                 Ok((status, body)) => {
-                    let v: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+                    let v: serde_json::Value =
+                        serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
                     report.vault_ok = if credentials::available() {
                         Some(status == 200 && v.get("ok").and_then(|x| x.as_bool()) == Some(true))
                     } else {
@@ -188,7 +348,9 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
                     };
                     report.vault_detail = v;
                 }
-                Err(e) => report.vault_detail = serde_json::Value::String(format!("vault selftest: {e}")),
+                Err(e) => {
+                    report.vault_detail = serde_json::Value::String(format!("vault selftest: {e}"))
+                }
             }
             report.shell_rss_bytes = rss_bytes(&mut sys, std::process::id());
             report.sidecar_rss_bytes = rss_bytes(&mut sys, sc.child.id());
@@ -239,67 +401,26 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
-        .manage(CoreState(Mutex::new(None)))
+        .manage(CoreState {
+            status: Mutex::new(CoreStatus::Idle),
+            log: Mutex::new(None),
+        })
         .setup(|app| {
-            let script = app
-                .path()
-                .resource_dir()
-                .map(|d| d.join("core").join("modulex-core.mjs"))
-                .map_err(|e| e.to_string())?;
-            let node = sidecar::node_path(&exe_dir());
-            // Stable credentials from Windows Credential Manager; Core generates them on the first launch.
-            let mut env = credentials::core_env();
-            // Core may store/resolve secrets at runtime through the shell (vault.rs), e.g. build worker tokens.
-            env.push(("MODULEX_VAULT_BRIDGE", "1".to_string()));
-            // %LOCALAPPDATA%\com.modulex.gamestudio (the app identifier): audit log, store, config versions, extensions, evolution
-            // sandboxes and the install state that drives rollback and Safe Mode.
-            if let Ok(dir) = app.path().app_local_data_dir() {
-                env.push(("MODULEX_DATA_DIR", dir.to_string_lossy().into_owned()));
-            }
-            if let Ok(res) = app.path().resource_dir() {
-                env.extend(bundled_env(&res, app.path().home_dir().ok()));
-            }
-            // Safe Mode (Execution Patch 2 §21): if Core does not come up, start it once more with every non-core
-            // extension disabled and the last known-good configuration, so the owner can roll back or repair.
-            let spawned = sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &env).or_else(|e| {
-                eprintln!("[modulex] {e}; retrying in Safe Mode");
-                let mut safe = env.clone();
-                safe.push(("MODULEX_SAFE_MODE", "1".to_string()));
-                sidecar::spawn(&node, &script, HANDSHAKE_TIMEOUT, &safe)
-            });
-            match spawned {
-                Ok(sc) => {
-                    for (name, value) in [
-                        (credentials::AGENT_TOKEN, &sc.handshake.agent_token),
-                        (
-                            credentials::CLAUDE_DESKTOP_TOKEN,
-                            &sc.handshake.claude_desktop_token,
-                        ),
-                    ] {
-                        if !value.is_empty()
-                            && credentials::get(name).as_deref() != Some(value.as_str())
-                        {
-                            if let Err(e) = credentials::set(name, value) {
-                                eprintln!("[modulex] {e}");
-                            }
-                        }
-                    }
-                    *app.state::<CoreState>().0.lock().unwrap() = Some(sc);
-                }
-                Err(e) => eprintln!("[modulex] {e}"),
-            }
+            // In the background: the window shows "Starting Studio Core…" and then the app, or the error and the log.
+            start_core(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 // Dropping the Sidecar kills Core (which in turn owns server/editor/game children later).
-                if let Ok(mut g) = window.state::<CoreState>().0.lock() {
-                    g.take();
+                if let Ok(mut g) = window.state::<CoreState>().status.lock() {
+                    *g = CoreStatus::Idle;
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
             core_connection,
+            restart_core,
             claude_desktop_pairing_token,
             reveal_claude_extension
         ])

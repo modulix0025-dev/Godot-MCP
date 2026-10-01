@@ -195,6 +195,9 @@ jobs:
           if ($h.pipeline.available -ne $false) { throw "small installer: pipeline.available should be false (no Godot bundled)" }
           # D-056: Core stored, read back and deleted a probe secret in Windows Credential Manager through the shell.
           if ($r.vault_ok -ne $true) { throw "credential store bridge round-trip failed: $($r.vault_detail | ConvertTo-Json -Compress)" }
+          # The self-test runs Core with the GUI's exact environment; its stderr must land in the owner-visible log.
+          if (-not $r.core_log -or -not (Select-String -Path $r.core_log -Pattern 'listening on 127.0.0.1' -Quiet)) { throw "Core log not written: $($r.core_log)" }
+          "Core log: $($r.core_log)"; Get-Content $r.core_log -Tail 5
           Copy-Item $report modulex-selftest.json
           $uninstaller = Get-ChildItem $app.DirectoryName -Filter 'uninstall*.exe' | Select-Object -First 1
           if ($uninstaller) {

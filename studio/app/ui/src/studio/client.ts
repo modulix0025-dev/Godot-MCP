@@ -12,19 +12,42 @@ export interface CoreConnection {
 
 type TauriInternals = { invoke: (cmd: string, args?: unknown) => Promise<unknown> };
 
-export async function discoverConnection(): Promise<CoreConnection | null> {
+/** The shell's Studio Core state while the UI boots: Core starts in the background and may take a while. */
+export type CoreBoot =
+  | { status: 'ready'; connection: CoreConnection }
+  | { status: 'starting'; elapsedS: number }
+  | { status: 'failed'; error: string; log: string | null }
+  | { status: 'outside' };
+
+/** The message of anything thrown: Tauri rejects commands with a plain string, not an Error. */
+export function errorText(e: unknown): string {
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
+export async function bootStatus(): Promise<CoreBoot> {
   const tauri = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
   if (tauri) {
-    const info = (await tauri.invoke('core_connection')) as { port: number; token: string };
-    return { base: `http://127.0.0.1:${info.port}`, token: info.token };
+    const info = (await tauri.invoke('core_connection')) as
+      | { status: 'ready'; port: number; token: string }
+      | { status: 'starting'; elapsed_s: number }
+      | { status: 'failed'; error: string; log: string | null };
+    if (info.status === 'starting') return { status: 'starting', elapsedS: info.elapsed_s };
+    if (info.status === 'failed') return { status: 'failed', error: info.error, log: info.log };
+    return { status: 'ready', connection: { base: `http://127.0.0.1:${info.port}`, token: info.token } };
   }
   if (import.meta.env.DEV) {
     const q = new URLSearchParams(window.location.search);
     const port = q.get('core');
     const token = q.get('token');
-    if (port && token) return { base: `http://127.0.0.1:${port}`, token };
+    if (port && token) return { status: 'ready', connection: { base: `http://127.0.0.1:${port}`, token } };
   }
-  return null;
+  return { status: 'outside' };
 }
 
 /** Call one of the shell's commands (Tauri). Throws outside the desktop app. */

@@ -162,4 +162,5 @@ Until then, update by running a newer installer: your data is kept.
 | A component **failed: checksum mismatch** | The download was corrupted or tampered with. Press *Retry*. |
 | **Playtest** stage FAILED, or BLOCKED with a script | Open **Test & Debug** for the evidence; *Copy diagnostics* puts it on the clipboard. |
 | iOS shows **PREPARED** | Expected on Windows. Pair a macOS build worker for a signed build. |
+| The app stays on **Starting Studio Core…** | The first launch can take up to a minute while Windows scans the app. If Core cannot start, the screen shows the error, the log path (`%LOCALAPPDATA%\com.modulex.gamestudio\logs\core.log`), *Retry* and *Copy diagnostics*. |
 | Claude Desktop says the Studio is down | Keep the ModuleX app open: Claude Desktop talks to the Studio while it runs. |

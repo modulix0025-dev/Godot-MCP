@@ -5,7 +5,7 @@
 // derived only from reported data, per-endpoint error states, RTL, and the owner token never leaving memory.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { healthSignals, parseLiveRoute, StudioApp } from '../src/studio/StudioApp';
+import { BootScreen, healthSignals, parseLiveRoute, StudioApp } from '../src/studio/StudioApp';
 import { EMPTY_SNAPSHOT } from '../src/studio/useSnapshot';
 
 const TOKEN = 'owner-token-secret-value';
@@ -295,5 +295,68 @@ describe('health cluster and routing', () => {
     expect(parseLiveRoute('#/studio/space-kid')).toEqual({ screen: 'studio', projectId: 'space-kid' });
     expect(parseLiveRoute('#/nope')).toEqual({ screen: 'projects', projectId: null });
     expect(parseLiveRoute('#/studio/../../etc')).toEqual({ screen: 'studio', projectId: null });
+  });
+});
+
+describe('startup: Studio Core starts in the background', () => {
+  const setShell = (invoke: (cmd: string) => Promise<unknown>) =>
+    ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = { invoke });
+  const clearShell = () => delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+
+  it('polls while Core is starting, then opens the app when it is ready', async () => {
+    fakeCore();
+    let calls = 0;
+    setShell(async (cmd) => {
+      expect(cmd).toBe('core_connection');
+      calls++;
+      return calls < 3
+        ? { status: 'starting', elapsed_s: calls }
+        : { status: 'ready', port: 47821, token: TOKEN, version: '0.1.0' };
+    });
+    try {
+      window.location.hash = '#/projects';
+      render(<StudioApp />);
+      expect(await screen.findByText(/Starting Studio Core/)).toBeTruthy();
+      expect(await screen.findByText('رحلة طفل في الفضاء', {}, { timeout: 5000 })).toBeTruthy();
+      expect(calls).toBe(3);
+    } finally {
+      clearShell();
+    }
+  });
+
+  it('shows why Core did not start, where the log is, and retries through the shell', async () => {
+    const invoke = vi.fn(async (cmd: string) =>
+      cmd === 'restart_core'
+        ? null
+        : { status: 'failed', error: 'Studio Core exited during startup (exit code: 1)', log: 'C:/x/logs/core.log' },
+    );
+    setShell(invoke);
+    try {
+      render(<StudioApp />);
+      expect(await screen.findByText('Studio Core did not start')).toBeTruthy();
+      expect(screen.getByText(/exited during startup/)).toBeTruthy();
+      expect(screen.getByText('C:/x/logs/core.log')).toBeTruthy();
+      await act(async () => fireEvent.click(screen.getByText('Retry')));
+      expect(invoke).toHaveBeenCalledWith('restart_core', undefined);
+    } finally {
+      clearShell();
+    }
+  });
+
+  it('a shell rejection (a plain string, as Tauri sends it) is shown, never an endless "Starting"', async () => {
+    setShell(async () => {
+      throw 'command core_connection not allowed';
+    });
+    try {
+      render(<StudioApp />);
+      expect(await screen.findByText('command core_connection not allowed')).toBeTruthy();
+    } finally {
+      clearShell();
+    }
+  });
+
+  it('after 20 s of starting, explains the first-launch scan', () => {
+    render(<BootScreen boot={{ status: 'starting', elapsedS: 25 }} onRetry={() => undefined} />);
+    expect(screen.getByText(/first launch can take up to a minute/)).toBeTruthy();
   });
 });
