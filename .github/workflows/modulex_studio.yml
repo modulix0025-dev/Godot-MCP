@@ -12,6 +12,11 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      delete_preview:
+        description: "Only delete the public preview release (it is published for one week)"
+        type: boolean
+        default: false
 
 concurrency:
   group: modulex-studio-${{ github.event.pull_request.number || github.ref }}
@@ -24,6 +29,7 @@ env:
 jobs:
   linux:
     name: studio lint + typecheck + test (linux)
+    if: ${{ !inputs.delete_preview }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -76,8 +82,9 @@ jobs:
 
   windows:
     name: studio tests + Tauri NSIS installer (windows)
+    if: ${{ !inputs.delete_preview }}
     runs-on: windows-latest
-    timeout-minutes: 75
+    timeout-minutes: 150
     defaults:
       run:
         shell: pwsh
@@ -238,7 +245,8 @@ jobs:
           "Full installer: $([math]::Round($size / 1MB, 1)) MB"
           if ($size -lt 100MB) { throw "full installer is unexpectedly small ($size bytes): the engine was not bundled" }
 
-      - name: Full installer — silent install, self-test (pipeline available), silent uninstall
+      - name: Full installer — silent install, self-test (pipeline available)
+        id: fullinstall
         run: |
           $setup = "studio/app/src-tauri/target/release/bundle/nsis/ModuleXGameStudioFullSetup.exe"
           $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
@@ -265,11 +273,36 @@ jobs:
           if ($h.pipeline.qaTier -ne $true) { throw "full installer: Core reports no QA tier (MODULEX_SERVER not resolved)" }
           "pipeline.available=$($h.pipeline.available) pipeline.qaTier=$($h.pipeline.qaTier)"
           Copy-Item $report modulex-selftest-full.json
-          $uninstaller = Get-ChildItem $app.DirectoryName -Filter 'uninstall*.exe' | Select-Object -First 1
+          "dir=$($app.DirectoryName)" >> $env:GITHUB_OUTPUT
+
+      # The acceptance question: does the app a user installs actually make a game? The INSTALLED Core (installed
+      # Node + bundle + engine), the Setup Assistant installing from official sources (system .NET hidden), Claude
+      # Desktop calling studio_game_create over /mcp, then a playtested, built and launch-smoked Windows game.
+      - name: Installed app makes a game (Setup Assistant → Claude Desktop → Windows build)
+        working-directory: studio
+        run: node scripts/installed-e2e.mjs --install "${{ steps.fullinstall.outputs.dir }}" --out "${{ github.workspace }}/installed-e2e"
+
+      - name: Upload the game made by the installed app + its evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: modulex-installed-e2e
+          path: installed-e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Full installer — silent uninstall (games are kept)
+        if: always() && steps.fullinstall.outputs.dir != ''
+        run: |
+          $dir = "${{ steps.fullinstall.outputs.dir }}"
+          $uninstaller = Get-ChildItem $dir -Filter 'uninstall*.exe' | Select-Object -First 1
           if ($uninstaller) {
             $u = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
             "uninstaller exit code: $($u.ExitCode)"
+            if ($u.ExitCode -ne 0) { throw "uninstaller failed" }
           }
+          $games = Join-Path $env:USERPROFILE 'ModuleX Games'
+          if (Test-Path $games) { "games kept after uninstall: $((Get-ChildItem $games -Directory).Name -join ', ')" }
 
       - name: Authenticode status of both installers
         run: |
@@ -302,3 +335,78 @@ jobs:
             modulex-selftest-full.json
           if-no-files-found: warn
           retention-days: 7
+
+  # Direct download links for the owner: a PUBLIC pre-release with fixed asset names, replaced on every green run of
+  # the development branch. Published only after the Windows job passed, which includes the installed-app
+  # acceptance test. The owner asked for it to live one week: the notes state the deletion date, and the
+  # `delete_preview` manual run below removes it (release + tag).
+  #   https://github.com/<repo>/releases/download/modulex-studio-preview/ModuleXGameStudioFullSetup.exe
+  release:
+    name: publish the preview release (direct download links, one week)
+    needs: windows
+    if: >-
+      !inputs.delete_preview &&
+      github.event_name == 'push' && github.ref_name == 'claude/nifty-allen-ipdy0k'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: modulex-studio-preview-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dl
+      - name: Collect the release assets
+        run: |
+          set -euo pipefail
+          mkdir -p rel
+          cp dl/modulex-studio-windows-full/ModuleXGameStudioFullSetup.exe rel/
+          cp dl/modulex-studio-windows/ModuleXGameStudioSetup.exe rel/
+          (cd dl/modulex-installed-e2e/game-windows-release && zip -qr ../../../rel/SpaceKidJourney-sample-game-windows.zip .)
+          cp dl/modulex-installed-e2e/installed-e2e.json rel/installed-e2e-report.json
+          (cd rel && sha256sum * > SHA256SUMS.txt)
+          ls -l rel
+          cat rel/SHA256SUMS.txt
+      - name: Replace the preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: modulex-studio-preview
+        run: |
+          set -euo pipefail
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
+          expires="$(date -u -d '+7 days' '+%Y-%m-%d')"
+          {
+            echo "ModuleX Game Studio preview, built from \`${GITHUB_SHA::7}\` (${GITHUB_REF_NAME}). **This preview is deleted on ${expires}.**"
+            echo
+            echo "- **ModuleXGameStudioFullSetup.exe**: recommended. Bundles Godot 4.5.1 .NET and the MCP server."
+            echo "- **ModuleXGameStudioSetup.exe**: small installer; the Setup Assistant downloads Godot on first run."
+            echo "- **SpaceKidJourney-sample-game-windows.zip**: the game the *installed* app made in CI from the sample"
+            echo "  Game Specification (Claude Desktop, studio_game_create, playtest, Windows RELEASE build)."
+            echo "- **installed-e2e-report.json**: every stage and build of that run. **SHA256SUMS.txt**: checksums."
+            echo
+            echo "Unsigned: Windows SmartScreen shows \"Windows protected your PC\"; choose More info, then Run anyway."
+            echo
+            echo "CI run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > notes.md
+          gh release create "$TAG" rel/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "ModuleX Game Studio preview (${GITHUB_SHA::7}, until ${expires})" --notes-file notes.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '.url, (.assets[] | .url)'
+
+  delete-preview:
+    name: delete the preview release
+    if: ${{ inputs.delete_preview }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete the release and its tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view modulex-studio-preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete modulex-studio-preview --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            echo "preview release deleted"
+          else
+            echo "no preview release to delete"
+          fi
