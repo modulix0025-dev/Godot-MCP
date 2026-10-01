@@ -36,3 +36,7 @@
 /tests/chain-fixtures/** text eol=lf
 /.github/scripts/chain_fixture.py text eol=lf
 /.github/scripts/chain_feed.py text eol=lf
+
+# The minisign fixtures are signed BYTES (the signature covers update.bin exactly); a CRLF checkout on Windows
+# would change them and the verification test would fail. Never convert them.
+/studio/core/tests/fixtures/minisign/** -text

@@ -118,8 +118,12 @@ function cargoCrates(previous) {
       { cwd: join(studio, 'app/src-tauri'), encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
     const rows = new Map();
-    for (const line of out.split('\n')) {
-      const [p, l] = line.replace(/ \(\*\)$/, '').split('\t');
+    for (const raw of out.split(/\r?\n/)) {
+      // `cargo tree` marks repeated subtrees with " (*)"; strip it (after the CR on Windows).
+      const [p, l] = raw
+        .trim()
+        .replace(/ \(\*\)$/, '')
+        .split('\t');
       const m = /^(\S+) v(\S+)/.exec(p ?? '');
       if (m && m[1] !== 'modulex-game-studio')
         rows.set(`${m[1]}@${m[2]}`, { name: m[1], version: m[2], license: (l ?? '').trim() || 'UNKNOWN' });
