@@ -44,6 +44,9 @@ import { PlaytestSession } from '../qa/playtest.js';
 import { loadScenarios, QaRunner, writeScenarios, type SuiteReport } from '../qa/qa-runner.js';
 import { defaultScenarios } from '../qa/scenarios.js';
 import { runScene, type SceneRun } from '../qa/scene-runner.js';
+import { smokeRelease } from '../build/smoke.js';
+import type { BudgetCheck } from '../cost/budget.js';
+import { completionOf } from './completion.js';
 import type { PipelineRun, ProjectRecord, StudioStore } from '../store/studio-store.js';
 
 export type StageStatus = Exclude<OutcomeStatus, 'PENDING_APPROVAL'>;
@@ -62,6 +65,8 @@ export interface StageContext {
   projectDir: string | null;
   generated: GeneratedProject;
   engine: PipelineEngine;
+  /** The stage being executed. */
+  stage: PipelineStage;
 }
 
 export type StageExecutor = (ctx: StageContext) => Promise<StageOutcome>;
@@ -86,6 +91,14 @@ export interface PipelineEngineOptions {
   executors?: Partial<Record<PipelineStage, StageExecutor>>;
   /** The QA tier (null/undefined = boot-only playtest; the reason is recorded). */
   qa?: QaTier | null;
+  /** studio.db: task-level resumability inside a stage (Phase 12). */
+  db?: StudioDb | null;
+  /** Windows RELEASE launch smoke (alive 10 s). Default: smokeRelease on a Windows host, unavailable elsewhere. */
+  smokeRelease?: ((exe: string) => Promise<{ alive: boolean; exitCode: number | null }>) | null;
+  /** Budget pre-flight (Phase 12): an estimate above what is left asks the owner (NEEDS_HUMAN), never overspends. */
+  budget?: { check(projectId: string, estimateUsd: number): BudgetCheck } | null;
+  /** Pre-flight cost estimate of a stage in USD (asset generation on GPU workers; builds on paid workers). */
+  estimateUsd?: (stage: PipelineStage, c: StageContext) => number;
   version?: string;
 }
 
@@ -160,13 +173,22 @@ export class PipelineEngine {
       const st = run.stages.find((s) => s.stage === stage)!;
       if (isDone(st.status)) continue;
       store.updateStage(projectId, run.run_id, stage, { status: 'RUNNING', reason: null, evidence: [] });
-      const ctx: StageContext = { project, spec, run, projectDir: project.path, generated, engine: this };
+      const ctx: StageContext = { project, spec, run, projectDir: project.path, generated, engine: this, stage };
       let out: StageOutcome;
-      try {
-        out = await (this.o.executors?.[stage] ?? this.executorFor(stage))(ctx);
-      } catch (e) {
-        out = { status: 'FAILED', evidence: [], reason: (e as Error).message };
-      }
+      const estimate = this.o.estimateUsd?.(stage, ctx) ?? 0;
+      const budget = estimate > 0 ? this.o.budget?.check(projectId, estimate) : undefined;
+      if (budget && !budget.ok) {
+        out = {
+          status: 'NEEDS_HUMAN',
+          evidence: [`pre-flight estimate $${estimate.toFixed(2)}; ${budget.detail}`],
+          reason: `budget: ${budget.reason}. Raise the budget in Settings or approve, then resume.`,
+        };
+      } else
+        try {
+          out = await (this.o.executors?.[stage] ?? this.executorFor(stage))(ctx);
+        } catch (e) {
+          out = { status: 'FAILED', evidence: [], reason: (e as Error).message };
+        }
       store.updateStage(projectId, run.run_id, stage, {
         status: out.status,
         evidence: out.evidence,
@@ -182,7 +204,52 @@ export class PipelineEngine {
         break;
       }
     }
+    // Phase 12: the verdict is recomputed from the recorded evidence; nothing else can make a run SUCCESS.
+    const fresh = store.mustProject(projectId);
+    const latestRun = fresh.runs.find((r) => r.run_id === run.run_id) ?? run;
+    store.setRunCompletion(projectId, run.run_id, completionOf(fresh, latestRun, chooseProfiles(spec).export));
     return run;
+  }
+
+  /**
+   * Core start (Phase 12): resume every project whose latest run was interrupted mid-stage (a stage left RUNNING
+   * by a crash or kill). Runs that stopped on purpose (FAILED/BLOCKED/NEEDS_HUMAN) wait for studio_pipeline_resume.
+   */
+  resumeInterrupted(): Promise<PipelineRun>[] {
+    const out: Promise<PipelineRun>[] = [];
+    for (const p of this.o.store.listProjects()) {
+      const run = p.runs.at(-1);
+      if (run?.stages.some((s) => s.status === 'RUNNING')) out.push(this.execute(p.project_id));
+    }
+    return out;
+  }
+
+  /**
+   * Task-level resumability inside a stage (Phase 12): each unit of work claims an idempotency key in studio.db.
+   * A unit whose task is DONE and whose post-condition still holds is skipped after a restart, so a stage that
+   * stopped at "scene 17 of 30" resumes at scene 17. Without a database every unit runs.
+   */
+  private async task<T>(
+    c: StageContext,
+    stage: PipelineStage,
+    unit: string,
+    work: () => Promise<{ ok: boolean; value: T }>,
+    postCondition: () => boolean = () => true,
+  ): Promise<{ value: T | null; resumed: boolean; ok: boolean }> {
+    const db = this.o.db;
+    if (!db) {
+      const r = await work();
+      return { value: r.value, resumed: false, ok: r.ok };
+    }
+    const key = `${c.run.run_id}|${stage}|${unit}`;
+    const id = `t_${createHash('sha256').update(key).digest('hex').slice(0, 16)}`;
+    const { task } = db.claimTask(key, id, c.run.run_id, stage);
+    if (task.status === 'DONE' && postCondition())
+      return { value: task.result ? (JSON.parse(task.result) as T) : null, resumed: true, ok: true };
+    db.updateTask(task.task_id, 'RUNNING');
+    const r = await work();
+    db.updateTask(task.task_id, r.ok ? 'DONE' : 'FAILED', r.value);
+    return { value: r.value, resumed: false, ok: r.ok };
   }
 
   private audit(
@@ -347,8 +414,20 @@ export class PipelineEngine {
     const evidence: string[] = [];
     const failures: string[] = [];
     for (const s of scenes) {
-      const r = await this.o.runScene(dir, s, frames);
-      evidence.push(`${s}: ${r.ok ? 'ok' : 'FAILED'} (${frames} frames, ${Math.round(r.ms / 100) / 10}s)`);
+      const t = await this.task<SceneRun>(
+        c,
+        c.stage,
+        `${s}@${frames}`,
+        async () => {
+          const r = await this.o.runScene(dir, s, frames);
+          return { ok: r.ok, value: r };
+        },
+        () => existsSync(join(dir, s.replace('res://', ''))),
+      );
+      const r = t.value!;
+      evidence.push(
+        `${s}: ${r.ok ? 'ok' : 'FAILED'} (${frames} frames, ${Math.round(r.ms / 100) / 10}s${t.resumed ? ', verified before the restart' : ''})`,
+      );
       if (!r.ok) failures.push(`${s}: ${r.errors[0] ?? `exit ${r.exit}`}`);
     }
     if (!scenes.length) return { status: 'FAILED', evidence, reason: `${label}: no scenes found` };
@@ -501,6 +580,24 @@ export class PipelineEngine {
     const results: BuildResult[] = [];
     for (const platform of c.spec.platforms) results.push(await this.runBuild(c, platform, profile));
     const evidence = results.map(summarise);
+    // Windows launch smoke (Phase 10): only on a Windows host. Elsewhere it is recorded as not run (null), and the
+    // completion predicate reports it missing instead of assuming it.
+    const smoke =
+      this.o.smokeRelease === undefined
+        ? process.platform === 'win32'
+          ? (exe: string) => smokeRelease(exe)
+          : null
+        : this.o.smokeRelease;
+    for (const r of results.filter((x) => x.platform === 'windows' && x.status === 'BUILT')) {
+      const exe = r.artifacts.find((a) => a.path.endsWith('.exe'));
+      if (!smoke || !exe) {
+        evidence.push('windows launch smoke: not run on this host (requires Windows)');
+        continue;
+      }
+      const s = await smoke(exe.path);
+      this.o.store.setBuildSmoke(c.project.project_id, r.build_id, s.alive);
+      evidence.push(`windows launch smoke: ${s.alive ? 'alive 10 s' : `exited early (${s.exitCode})`}`);
+    }
     const failed = results.filter((r) => r.status === 'FAILED');
     if (failed.length)
       return {
@@ -533,6 +630,8 @@ export interface PipelineHostConfig {
   addonsSource: string;
   dotnet?: string;
   androidSdk?: string | null;
+  /** Budget pre-flight for stages with a cost estimate (Phase 12). */
+  budget?: PipelineEngineOptions['budget'];
   /** gamedev-mcp-server binary for the playtest server (MODULEX_SERVER); unset → boot-only playtest. */
   serverBinary?: string | null;
   /** Run the playtest game windowed (screenshots need a GPU/display). Default true. */
@@ -616,5 +715,7 @@ export function createPipelineEngine(
     }),
     runScene: (dir, scene, frames) => runScene(host.godot, dir, scene, frames, { ...process.env, ...env }),
     qa: serverBinary ? createQaTier({ ...host, serverBinary }, deps) : null,
+    db: host.db,
+    budget: host.budget,
   });
 }

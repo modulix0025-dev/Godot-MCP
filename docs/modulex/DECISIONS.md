@@ -866,3 +866,53 @@ tokens). However, Core has no channel yet to ask the shell to **store** a new se
   not available". It never falls back to a file, the database or an environment variable.
 - `startCore({ vault })` accepts the bridge as soon as it exists. The tests use `MemoryVault`.
 - `studio.db` itself is now opened by `main.ts` under `MODULEX_DATA_DIR`. This is a prerequisite of Phase 12.
+
+## D-053 · Resumability, the completion predicate and budgets (DECIDED, built)
+
+**Storage split.** The plan asks for SQLite "where it asks". `studio.db` now holds everything resumability depends
+on:
+
+- the intra-stage tasks (`tasks`, idempotency key plus post-condition);
+- ComfyUI jobs (`comfy_jobs`) and build worker jobs (`build_jobs`);
+- the cost ledger and budgets.
+
+The project record (manifests, the stage list, provenance, build records) stays in the JSON `StudioStore`. Its
+`save()` is now an **atomic replace** (temp file, then rename), so a kill -9 mid-write leaves the previous complete
+file. Moving the project record itself into SQLite is a mechanical migration with no behaviour change. It is left
+until the production UI needs queries over it.
+
+**Resume.**
+
+- **Core start.** `resumeInterrupted()` continues every project whose latest run has a stage left RUNNING.
+  `BuildJobs.resume()` follows unfinished worker jobs.
+- **Within a stage.** Units of work claim `run|stage|unit` in `tasks`. A unit that is DONE, and whose
+  post-condition still holds (the scene file exists), is skipped. A run killed at "scene 17 of 30" therefore
+  resumes at scene 17.
+- **ComfyUI.** Follows the persisted `prompt_id` (D-044).
+- **Builds.** Follow the persisted `job_id` (D-051).
+
+**Completion predicate.**
+
+- `core/src/pipeline/completion.ts` maps the recorded evidence to `CompletionEvidence`, and the engine stores the
+  verdict on the run after every execution. `studio_pipeline_status` returns it; nothing can set it.
+- **The mapping is strict.** A PARTIAL_SUCCESS stage proves nothing. For example, a boot-only playtest leaves
+  `qa.smokeTestsPass` missing. Platforms count only through their latest export build record.
+- **Windows launch smoke.** It runs only on a Windows host. Elsewhere it stays missing, so a pipeline on Linux can
+  never report a complete Windows game.
+
+**Budgets.**
+
+- `Budget` reads the caps from the versioned `budgets` config document and the spend from the ledger, both
+  per project and per calendar month (UTC).
+- A stage pre-flight estimate that would cross a cap stops the stage as NEEDS_HUMAN, with the numbers.
+- A tool call whose estimate would cross a cap becomes an **Ask** (owner approval), even for an auto-approved or
+  always-allowed tool.
+
+**GATE 12.**
+
+- `core/tests/resume.test.ts` (8 tests): Core killed at scene 17/30, then resumed at 17; Core killed
+  mid-generation, after which the worker accepted exactly one prompt; the predicate wired to the pipeline; budgets
+  and Ask.
+- "Kill mid-build" is in `build-workers.test.ts` (GATE 11).
+- `shared/tests/completion.test.ts`: all 131,072 combinations of missing evidence, every single failing row, the
+  platform rules and NEEDS_HUMAN.

@@ -12,7 +12,13 @@ import type { AddressInfo } from 'node:net';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { ConfigDocId, DevCapability, Permission, RepairAction } from '@modulex/shared';
+import {
+  DEFAULT_CONFIG,
+  type ConfigDocId,
+  type DevCapability,
+  type Permission,
+  type RepairAction,
+} from '@modulex/shared';
 import * as godotCli from 'godot-cli';
 import { STUDIO_CORE_VERSION, STUDIO_VERSIONS } from './version.js';
 import { createSystem, type SystemServices } from './evolution/system.js';
@@ -27,6 +33,7 @@ import { createStudioMcpServer } from './mcp/studio-mcp.js';
 import { createPipelineEngine, type PipelineHostConfig } from './pipeline/engine.js';
 import { BuildJobs, listBuildWorkers, pairBuildWorker, type WritableVault } from './build/build-workers.js';
 import type { StudioDb } from './db/database.js';
+import { Budget, type BudgetCaps } from './cost/budget.js';
 
 /** Proves the bundled sidecar carries the reused godot-cli library (Phase 0 spike 7). */
 const GODOT_CLI_EXPORTS = Object.keys(godotCli)
@@ -130,15 +137,22 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
   const buildJobs = db && vault ? new BuildJobs({ db, vault, redactor, audit }) : null;
   const iosSigningProfile = () =>
     db?.get<{ value: string }>("SELECT value FROM settings WHERE key = 'build.ios_signing_profile'")?.value ?? null;
+  // Budgets (Phase 12): caps from the versioned `budgets` config document, spend from studio.db's cost ledger.
+  const budget = db
+    ? new Budget(db, () => system?.config.get<BudgetCaps>('budgets').value ?? DEFAULT_CONFIG.budgets)
+    : null;
   const pipeline = opts.pipeline
     ? createPipelineEngine(
-        { db: db ?? undefined, remote: buildJobs, iosSigningProfile, ...opts.pipeline },
+        { db: db ?? undefined, remote: buildJobs, iosSigningProfile, budget, ...opts.pipeline },
         { store, audit, redactor },
       )
     : null;
+  // Phase 12: a run interrupted mid-stage (Core killed) continues on start, at its first incomplete stage/task.
+  for (const p of pipeline?.resumeInterrupted() ?? [])
+    p.catch((e: Error) => console.error(`[modulex-core] pipeline resume: ${e.message}`));
   // Phase 11/12: follow every build job that was not terminal when Core last stopped (never resubmits a new job).
   void buildJobs?.resume().catch((e: Error) => console.error(`[modulex-core] build job resume: ${e.message}`));
-  const gateway = new Gateway({ audit, store, handlers, system, pipeline });
+  const gateway = new Gateway({ audit, store, handlers, system, pipeline, budget });
   const startedAt = Date.now();
   let port = 0;
 

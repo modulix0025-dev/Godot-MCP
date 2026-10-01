@@ -5,7 +5,7 @@
 // same shapes into SQLite (studio.db) without changing this interface. Never stores a secret: workers carry
 // `secret_ref` handles only.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
   CREATION_PIPELINE,
@@ -20,6 +20,7 @@ import {
   type TaskGraph,
   type TestManifest,
   type WorkerRecord,
+  type CompletionVerdict,
 } from '@modulex/shared';
 
 export interface BuildRecord {
@@ -32,6 +33,8 @@ export interface BuildRecord {
   size_bytes: number | null;
   created_at: string;
   note: string | null;
+  /** Windows RELEASE launch smoke (alive 10 s): true/false when it ran, null/absent when it could not run here. */
+  smoke?: boolean | null;
 }
 
 export interface StageState {
@@ -45,6 +48,11 @@ export interface PipelineRun {
   run_id: string;
   created_at: string;
   stages: StageState[];
+  /**
+   * The completion verdict (Phase 12), recomputed by the engine from the recorded evidence after every execution.
+   * Never set by a tool, an agent or the UI.
+   */
+  completion?: CompletionVerdict | null;
   /** Why the run is not progressing (e.g. the pipeline engine is not available in this build). */
   blocked: { code: string; message: string } | null;
 }
@@ -243,7 +251,10 @@ export class StudioStore {
     if (!this.persistPath) return;
     mkdirSync(dirname(this.persistPath), { recursive: true });
     const snap: Snapshot = { projects: [...this.projects.values()], workers: [...this.workers.values()] };
-    writeFileSync(this.persistPath, JSON.stringify(snap, null, 2), { encoding: 'utf-8', mode: 0o600 });
+    // Atomic replace (Phase 12): a kill -9 mid-write leaves the previous complete file, never a truncated one.
+    const tmp = `${this.persistPath}.tmp`;
+    writeFileSync(tmp, JSON.stringify(snap, null, 2), { encoding: 'utf-8', mode: 0o600 });
+    renameSync(tmp, this.persistPath);
   }
 
   listProjects(): ProjectRecord[] {
@@ -328,6 +339,20 @@ export class StudioStore {
     Object.assign(st, patch);
     this.save();
     return st;
+  }
+
+  setRunCompletion(projectId: string, runId: string, completion: CompletionVerdict): void {
+    const run = this.mustProject(projectId).runs.find((r) => r.run_id === runId);
+    if (!run) throw new Error(`unknown run '${runId}'`);
+    run.completion = completion;
+    this.save();
+  }
+
+  setBuildSmoke(projectId: string, buildId: string, smoke: boolean | null): void {
+    const b = this.mustProject(projectId).builds.find((x) => x.build_id === buildId);
+    if (!b) throw new Error(`unknown build '${buildId}'`);
+    b.smoke = smoke;
+    this.save();
   }
 
   setRunBlocked(projectId: string, runId: string, blocked: PipelineRun['blocked']): void {

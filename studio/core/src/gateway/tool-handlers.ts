@@ -351,7 +351,7 @@ export function createHandlers(): Map<string, ToolHandler> {
       title: 'Pipeline / Status',
       description: footer(
         'studio_pipeline_status',
-        'Every stage of the latest pipeline run with status, evidence and blocking reason. Changes nothing.\nArgs: project_id.\nOutput: {run_id, stages:[{stage,status,evidence,reason}], blocked} or null.',
+        'Every stage of the latest pipeline run with status, evidence and blocking reason, and the completion verdict computed from recorded evidence (it cannot be set by any tool). Changes nothing.\nArgs: project_id.\nOutput: {run_id, stages:[{stage,status,evidence,reason}], blocked, completion:{isGameComplete, status, missing, failed, notes}} or null.',
       ),
       input: z.object({ project_id: projectId }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },

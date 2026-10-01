@@ -282,6 +282,18 @@ export class StudioDb {
     return r?.s ?? 0;
   }
 
+  /** Spend recorded since `sinceIso` (inclusive), for one project or globally. */
+  spentSince(projectId: string | null, sinceIso: string): number {
+    const r = projectId
+      ? this.get<{ s: number | null }>(
+          'SELECT SUM(usd) AS s FROM cost_ledger WHERE project_id = ? AND at >= ?',
+          projectId,
+          sinceIso,
+        )
+      : this.get<{ s: number | null }>('SELECT SUM(usd) AS s FROM cost_ledger WHERE at >= ?', sinceIso);
+    return r?.s ?? 0;
+  }
+
   close(): void {
     this.db.close();
   }

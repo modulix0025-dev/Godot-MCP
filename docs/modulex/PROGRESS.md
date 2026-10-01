@@ -22,7 +22,8 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | 8 · Asset factory + Godot import | **Done** (D-046) | GATE 8: 14 fixture tests; live import into a real editor (a thumbnail under Xvfb) |
 | 9 · QA runner + fix loop | **Done** (D-047, D-049, D-050) | GATE 9 live: clean game 10/10 scenarios; 2 injected bugs detected, fixed, regression green; an unfixable bug ends BLOCKED |
 | 11 · Remote build workers | **Done against a mock runner** (D-051). Pairing from the UI is BLOCKED until the credential store bridge exists (D-052). Live Mac: BLOCKED (no Mac). | GATE 11 mock suite 10/10 (stable 5×); the live macOS test reports BLOCKED |
-| 12–15 | Not started. | — |
+| 12 · Resumability, completion predicate, cost | **Done** (D-053) | GATE 12: kill at scene 17/30 → resumes at 17; kill mid-generation → 1 ComfyUI job; kill mid-build → 1 worker job; predicate tested over all 131,072 missing-evidence combinations |
+| 13–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -413,6 +414,41 @@ available):
 ✓ BuildService iOS: SIGNED through a paired macOS worker; PREPARED without one
 ✓ live macOS worker: [gate11] live macOS signing: not exercised — BLOCKED (no macOS build worker available)
 Tests 10 passed (10)   — repeated 5×: 10/10 each time
+```
+
+## Phase 12: resumability, completion predicate, cost
+
+- **Resume.**
+  - On start: `resumeInterrupted()` for pipeline runs and `BuildJobs.resume()` for worker jobs.
+  - Inside a stage: idempotent tasks with post-conditions in `studio.db`.
+  - `StudioStore` saves atomically.
+- **Completion.** The verdict is computed from the recorded evidence after every execution, and returned by
+  `studio_pipeline_status`. Nothing can set it.
+- **Budgets.**
+  - Per-project and monthly caps, from the versioned `budgets` config.
+  - A stage pre-flight over the cap stops NEEDS_HUMAN.
+  - A tool call over the cap becomes an Ask.
+  - Worker minutes and GPU seconds go to the ledger.
+
+**GATE 12:**
+
+```
+core/tests/resume.test.ts
+✓ Core killed at scene 17 of 30: the next Core resumes at scene 17, scenes 1-16 are not re-run
+✓ a re-run stage skips verified scenes and runs only what is new or unverified
+✓ Core killed mid-generation: the next Core follows the persisted prompt_id — the worker saw one job
+✓ every stage SUCCESS is still not a complete game without platform evidence
+✓ SUCCESS only with every evidence row: builds with sha256, a launch smoke, a signed iOS release
+✓ Budget: per-project and monthly caps, with the numbers
+✓ a stage whose estimate crosses the budget stops NEEDS_HUMAN with the numbers; nothing runs
+✓ an over-budget tool call becomes an owner approval (Ask); within budget it runs
+core/tests/build-workers.test.ts
+✓ kill -9 of Core mid-build: resume follows the same job; no duplicate job on the worker
+shared/tests/completion.test.ts
+✓ all 131072 combinations: SUCCESS iff nothing is missing; missing names exactly the gaps
+✓ every single proven-failing row is FAILED and named
+✓ a second platform done while the first is incomplete is PARTIAL_SUCCESS, never SUCCESS
+✓ an owner decision pending is NEEDS_HUMAN even with every row proven
 ```
 
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)

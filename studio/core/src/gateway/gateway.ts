@@ -4,6 +4,7 @@
 // Agent or Claude Desktop — enters here: policy decision (`decide`, shared/policy.ts) → approval or refusal or
 // execution → structured result → audit. The gateway is the ONLY enforcement point: addon-side tool disabling
 // hides tools but does not block direct calls (DECISIONS D-010).
+import type { BudgetCheck } from '../cost/budget.js';
 import { randomUUID } from 'node:crypto';
 import {
   decide,
@@ -68,11 +69,14 @@ export interface GatewayOptions {
   system?: SystemServices | null;
   /** Pipeline engine (Phase 6); null → studio_game_create plans only and reports the engine as unavailable. */
   pipeline?: PipelineEngine | null;
+  /** Budgets (Phase 12): a call whose estimate would cross a cap becomes an owner approval (Ask), never silent. */
+  budget?: { check(projectId: string | null, estimateUsd: number): BudgetCheck } | null;
   now?: () => Date;
 }
 
 export class Gateway {
   private devMode: DevModeState = DEV_MODE_OFF;
+  private readonly budget: GatewayOptions['budget'];
   private readonly approvals = new Map<string, Approval>();
   private readonly alwaysAllow = new Map<string, Set<string>>(); // project_id → tool ids
   readonly audit: AuditLog;
@@ -87,6 +91,7 @@ export class Gateway {
   constructor(o: GatewayOptions) {
     this.system = o.system ?? null;
     this.pipeline = o.pipeline ?? null;
+    this.budget = o.budget ?? null;
     this.audit = o.audit;
     this.store = o.store;
     this.handlers = o.handlers;
@@ -132,14 +137,20 @@ export class Gateway {
     const allowSet = new Set<string>(projectId ? (this.alwaysAllow.get(projectId) ?? []) : []);
     for (const r of policy?.auto_approve ?? [])
       if (r.projects === '*' || (projectId && r.projects.includes(projectId))) allowSet.add(r.tool);
-    const decision = decide(tool, {
+    const estimatedCostUsd = handler?.estimateCostUsd?.(args);
+    let decision = decide(tool, {
       caller: ctx.caller,
       role: ctx.role,
       devMode: this.devMode,
       alwaysAllow: allowSet.size ? allowSet : undefined,
-      estimatedCostUsd: handler?.estimateCostUsd?.(args),
+      estimatedCostUsd,
       costThresholdUsd: policy?.cost_threshold_usd ?? this.costThreshold,
     });
+    // Budget pre-flight: crossing a cap always asks the owner, even for an auto-approved or always-allowed tool.
+    if (decision.effect === 'allow' && estimatedCostUsd && estimatedCostUsd > 0 && this.budget) {
+      const b = this.budget.check(projectId ?? null, estimatedCostUsd);
+      if (!b.ok) decision = { effect: 'ask', tier: decision.tier, reason: `Budget: ${b.reason} (${b.detail}).` };
+    }
     if (claude)
       this.audit.append('claude_tool_call', ctx.caller, {
         tool,
