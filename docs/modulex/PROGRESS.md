@@ -21,7 +21,8 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | 7 · ComfyUI workers + jobs | **Done against the mock.** The live worker test is BLOCKED: no GPU worker (D-045). | GATE 7 mock suite 18/18; the live test reports BLOCKED |
 | 8 · Asset factory + Godot import | **Done** (D-046) | GATE 8: 14 fixture tests; live import into a real editor (a thumbnail under Xvfb) |
 | 9 · QA runner + fix loop | **Done** (D-047, D-049, D-050) | GATE 9 live: clean game 10/10 scenarios; 2 injected bugs detected, fixed, regression green; an unfixable bug ends BLOCKED |
-| 11–15 | Not started. | — |
+| 11 · Remote build workers | **Done against a mock runner** (D-051). Pairing from the UI is BLOCKED until the credential store bridge exists (D-052). Live Mac: BLOCKED (no Mac). | GATE 11 mock suite 10/10 (stable 5×); the live macOS test reports BLOCKED |
+| 12–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -377,6 +378,42 @@ The test exports the sample game as Windows QA and RELEASE builds. The QA exe mu
 through its in-game runtime. The RELEASE exe, which has no MCP inside, must stay alive for 10 s. If the windowed run
 fails on the runner, the job retries with `MODULEX_SMOKE_HEADLESS=1`, and both the log and a workflow warning say so.
 The result of the first CI run is recorded below once it exists.
+
+## Phase 11: remote build workers
+
+- **`studio/worker`** (`modulex-build-worker`): an HTTPS service, mandatory unless loopback-only.
+  - one-time-code pairing, with hashed tokens;
+  - idempotent `bj_` jobs and sha256-verified bundle upload;
+  - cancel, heartbeat (`/v1/health`) and capabilities (profile names only);
+  - recovery after a worker restart;
+  - the Godot export runner, plus `xcodebuild archive` / `-exportArchive` for signed iOS;
+  - a macOS LaunchAgent plist.
+
+  Worker unit tests: 14/14.
+- **Core.**
+  - `RemoteBuildWorkerClient`, `pairBuildWorker` (token in the vault, handle in `studio.db`) and `BuildJobs`
+    (persist-before-send, `resume()`, one retry for `worker_restarted`, verified downloads, cost ledger).
+  - Schema v2 (`build_workers`, `build_jobs`).
+  - `BuildService` iOS gives SIGNED with a worker, otherwise PREPARED.
+  - Owner endpoints `GET /build-workers`, `POST /build-workers/pair` (503 BLOCKED without the vault, D-052) and
+    `POST /build-workers/ios-signing-profile`.
+
+**GATE 11** (`core/tests/build-workers.test.ts`: the real worker service, with a fake runner because no Mac is
+available):
+
+```
+✓ pairing keeps the token in the vault only; the database holds the handle
+✓ idempotency: one worker job per key; the second call returns the cached, verified result
+✓ cancel: an aborted build cancels the worker job
+✓ kill -9 of Core mid-build: resume follows the same job; no duplicate job on the worker
+✓ kill -9 between "row written" and "worker answered": resume submits the SAME job id once
+✓ a worker restart mid-job is retried once with a new job id for the same key
+✓ a tampered artifact is rejected (sha256 mismatch)
+✓ a runner failure is FAILED with its class, never retried as a lost job
+✓ BuildService iOS: SIGNED through a paired macOS worker; PREPARED without one
+✓ live macOS worker: [gate11] live macOS signing: not exercised — BLOCKED (no macOS build worker available)
+Tests 10 passed (10)   — repeated 5×: 10/10 each time
+```
 
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 

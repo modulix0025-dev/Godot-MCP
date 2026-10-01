@@ -100,6 +100,7 @@ export class ProjectFactory {
     const t = Date.now();
     let log = '';
     let failed = false;
+    let failure = '';
     try {
       const r = await fn();
       log = `${r.stdout}\n${r.stderr}`;
@@ -107,8 +108,11 @@ export class ProjectFactory {
       const err = e as { stdout?: string; stderr?: string; message: string };
       log = `${err.stdout ?? ''}\n${err.stderr ?? ''}\n${err.message}`;
       failed = true;
+      failure = err.message.split('\n')[0]!.slice(0, 300);
     }
     const errors = errorsOf(log);
+    // A process that failed to start or exited non-zero without a recognisable error line still says why.
+    if (failed && !errors.length) errors.push(failure);
     return {
       step: name,
       ok: !failed && errors.length === 0,

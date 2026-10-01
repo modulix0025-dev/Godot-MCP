@@ -25,6 +25,7 @@
 //                                   (PARTIAL_SUCCESS, reason recorded).
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { StudioDb } from './db/database.js';
 import { startCore, type CoreOptions } from './server.js';
 import { STUDIO_REPO_GATES } from './evolution/test-runner.js';
 import type { SourceWorkspace } from './evolution/evolution-service.js';
@@ -52,6 +53,9 @@ const options: CoreOptions = {
   auditPath: dataDir ? join(dataDir, 'audit.jsonl') : undefined,
   storePath: dataDir ? join(dataDir, 'studio-store.json') : undefined,
   dataDir: dataDir || undefined,
+  // studio.db: build worker pairings (handles only) and jobs, so a restart resumes them. The writable credential
+  // store bridge (vault) is Phase 13: until then pairing reports BLOCKED (D-051).
+  db: dataDir ? new StudioDb(join(dataDir, 'studio.db')) : null,
   source: sourceWorkspace(env.MODULEX_SOURCE_REPO || undefined),
   forceSafeMode: env.MODULEX_SAFE_MODE === '1',
   pipeline:

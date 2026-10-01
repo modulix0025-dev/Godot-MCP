@@ -9,7 +9,7 @@ export const STUDIO_CORE_VERSION = '0.1.0';
  */
 export const STUDIO_VERSIONS: VersionSet = {
   studio: STUDIO_CORE_VERSION,
-  schema: 1,
+  schema: 2,
   godot: '4.5.1',
   addons: { godot_mcp: '0.25.1', modulex_studio: '0.1.0' },
   worker_protocol: 1,

@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// modulex-build-worker (Phase 11). Phase 1 ships only the job-id contract so the Studio and the worker agree on
-// idempotency keys from day one; the HTTPS service, pairing and export/signing runner land in Phase 11.
-export const BUILD_WORKER_VERSION = '0.1.0';
+// modulex-build-worker (Phase 11): the remote export/signing worker. A macOS worker produces SIGNED iOS builds; an
+// optional Windows worker offloads desktop/Android exports. The protocol is in `@modulex/shared` (build-worker.ts).
+import { isValidBuildJobId } from '@modulex/shared';
+
+export { BUILD_WORKER_VERSION, WorkerService, type WorkerServiceOptions } from './service.js';
+export { WorkerStore, type StoredJob, type WorkerState } from './store.js';
+export {
+  GodotExportRunner,
+  RunnerError,
+  setPresetOptions,
+  type BuildRunner,
+  type RunContext,
+  type RunResult,
+} from './runner.js';
 
 /** Build job ids are client-generated and idempotent: `bj_` + 26 lowercase base32 chars (ULID-like). */
 export function isValidJobId(id: string): boolean {
-  return /^bj_[0-9a-hjkmnp-tv-z]{26}$/.test(id);
+  return isValidBuildJobId(id);
 }

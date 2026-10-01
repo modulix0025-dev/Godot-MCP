@@ -27,7 +27,13 @@ import {
 import { AuditLog } from '../audit/audit-log.js';
 import { Redactor } from '../audit/secrets.js';
 import { ProjectCheckpoints } from '../checkpoints/project-checkpoints.js';
-import { BuildService, type BuildRequest, type BuildResult, type Platform } from '../build/build-service.js';
+import {
+  BuildService,
+  type BuildRequest,
+  type BuildResult,
+  type BuildServiceOptions,
+  type Platform,
+} from '../build/build-service.js';
 import type { StudioDb } from '../db/database.js';
 import { generateProject, type GeneratedProject } from '../project/game-generator.js';
 import { ProjectFactory } from '../project/project-factory.js';
@@ -502,7 +508,7 @@ export class PipelineEngine {
         evidence,
         reason: `${failed[0]!.platform}: ${failed[0]!.errors[0] ?? 'export failed'}`,
       };
-    const notBuilt = results.filter((r) => r.status !== 'BUILT');
+    const notBuilt = results.filter((r) => r.status !== 'BUILT' && r.status !== 'SIGNED');
     if (!notBuilt.length) return { status: 'SUCCESS', evidence };
     if (notBuilt.length === results.length && !results.some((r) => r.status === 'PREPARED'))
       return {
@@ -531,6 +537,9 @@ export interface PipelineHostConfig {
   serverBinary?: string | null;
   /** Run the playtest game windowed (screenshots need a GPU/display). Default true. */
   windowed?: boolean;
+  /** Paired remote build workers (Phase 11): iOS is signed on a macOS worker when one is online. */
+  remote?: BuildServiceOptions['remote'];
+  iosSigningProfile?: BuildServiceOptions['iosSigningProfile'];
   env?: NodeJS.ProcessEnv;
   db?: StudioDb | null;
 }
@@ -597,7 +606,14 @@ export function createPipelineEngine(
     store: deps.store,
     audit: deps.audit,
     factory: new ProjectFactory({ ...host }),
-    builds: new BuildService({ godot: host.godot, db: host.db, env, androidSdk: host.androidSdk }),
+    builds: new BuildService({
+      godot: host.godot,
+      db: host.db,
+      env,
+      androidSdk: host.androidSdk,
+      remote: host.remote,
+      iosSigningProfile: host.iosSigningProfile,
+    }),
     runScene: (dir, scene, frames) => runScene(host.godot, dir, scene, frames, { ...process.env, ...env }),
     qa: serverBinary ? createQaTier({ ...host, serverBinary }, deps) : null,
   });

@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { WorkerService } from '../../worker/src/index.js';
+import { MemoryVault } from '../src/audit/secrets.js';
+import { StudioDb } from '../src/db/database.js';
 import { startCore, type CoreServer } from '../src/server.js';
 
 let core: CoreServer | undefined;
@@ -33,6 +39,53 @@ describe('Studio Core server', () => {
     const body = (await ok.json()) as { ok: boolean; godotCli: string[]; principal: string };
     expect(body).toMatchObject({ ok: true, principal: 'owner-ui' });
     expect(body.godotCli).toContain('createProject');
+    expect(body).toMatchObject({ pipeline: { available: false, qaTier: false } });
+  });
+
+  it('build worker pairing is owner-only, BLOCKED without a vault, and keeps the token out of the response', async () => {
+    const owner = (c: CoreServer, path: string, body?: unknown, token = c.handshake.token) =>
+      fetch(`http://127.0.0.1:${c.handshake.port}${path}`, {
+        method: body ? 'POST' : 'GET',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    core = await startCore();
+    expect((await owner(core, '/build-workers/pair', { url: 'https://x', code: 'AAAA-AAAA' })).status).toBe(503);
+    await core.close();
+
+    const svc = new WorkerService({
+      stateDir: mkdtempSync(join(tmpdir(), 'mx-bw-')),
+      runner: {
+        capabilities: async () => ({
+          os: 'darwin',
+          platforms: ['ios'],
+          godot_version: '4.5.1',
+          xcode_version: null,
+          signing_profiles: ['AppStore'],
+        }),
+        run: async () => ({ signed: false, artifacts: [] }),
+      },
+    });
+    const { url } = await svc.listen();
+    try {
+      const vault = new MemoryVault();
+      core = await startCore({ db: new StudioDb(':memory:'), vault });
+      const code = svc.store.newPairingCode();
+      expect((await owner(core, '/build-workers/pair', { url, code }, core.handshake.agentToken)).status).toBe(403);
+      const r = await owner(core, '/build-workers/pair', { url, code, name: 'Mac mini' });
+      expect(r.status).toBe(200);
+      const rec = (await r.json()) as { token_ref: string };
+      const token = await vault.resolve(rec.token_ref);
+      expect(token).toBeTruthy();
+      const list = await (await owner(core, '/build-workers')).text();
+      expect(list).toContain('Mac mini');
+      expect(list).not.toContain(token!);
+      expect(
+        (await (await owner(core, '/build-workers/ios-signing-profile', { name: 'AppStore' })).json()) as object,
+      ).toEqual({ ios_signing_profile: 'AppStore' });
+    } finally {
+      await svc.close();
+    }
   });
 
   it('owner endpoints refuse agent tokens', async () => {

@@ -7,6 +7,7 @@
 //   §3/§7/§17/§33   core patch pipeline (worktree sandbox, test gates, diff-bound approval, checkpoint, deploy,
 //                   health check, automatic revert, patch guard, protected controls)
 //   §8, §15, §20–21 migrations, updates + rollback, Safe Mode; §24 diagnostics.
+import { DB_SCHEMA_VERSION } from '../src/db/database.js';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -185,6 +186,7 @@ describe('versions', () => {
     expect(STUDIO_VERSIONS.studio).toBe(compat.studioVersion);
     expect(STUDIO_VERSIONS.godot).toBe(compat.godot.version);
     expect(STUDIO_VERSIONS.schema).toBe(compat.dbSchema);
+    expect(STUDIO_VERSIONS.schema).toBe(DB_SCHEMA_VERSION);
     expect(STUDIO_VERSIONS.addons).toEqual(compat.addon);
   });
 });

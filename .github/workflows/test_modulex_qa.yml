@@ -287,10 +287,14 @@ jobs:
           MODULEX_LIVE_SERVER: ${{ steps.server.outputs.bin }}
         run: |
           set -uo pipefail
-          godot_bin="$(command -v godot)"
-          # setup-godot puts a shim on PATH; resolve the real .exe it points at.
-          real="$(find "$(dirname "$(readlink -f "$godot_bin")")" -maxdepth 3 -iname 'Godot_v*_mono_win64.exe' ! -iname '*console*' | head -n1)"
-          export MODULEX_LIVE_GODOT="$(cygpath -w "${real:-$godot_bin}")"
+          # setup-godot puts a symlink shim (~/bin/godot, no .exe) on PATH, which Git Bash cannot resolve and which
+          # Node cannot spawn reliably. Use the real executable from setup-godot's install folder; fail if absent.
+          home_unix="$(cygpath -u "${USERPROFILE}")"
+          real="$(find "${home_unix}/godot" "${home_unix}/bin" -maxdepth 4 -iname 'Godot_v*_mono_win64.exe' ! -iname '*console*' 2>/dev/null | head -n1)"
+          if [ -z "$real" ]; then
+            echo "::error::Godot .exe not found under ${home_unix}/godot"; find "${home_unix}/godot" -maxdepth 3 2>/dev/null | head -50; exit 1
+          fi
+          export MODULEX_LIVE_GODOT="$(cygpath -w "$real")"
           echo "MODULEX_LIVE_GODOT=${MODULEX_LIVE_GODOT}"
           export MODULEX_LIVE_PROJECTS_ROOT="$(cygpath -w "$(pwd)/gate10-games")"
           mkdir -p gate10-games

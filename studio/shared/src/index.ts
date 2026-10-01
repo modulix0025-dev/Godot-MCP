@@ -16,3 +16,4 @@ export * from './evolution.js';
 export * from './extensions.js';
 export * from './versions.js';
 export * from './config-docs.js';
+export * from './build-worker.js';

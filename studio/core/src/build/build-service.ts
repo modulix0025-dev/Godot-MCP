@@ -31,6 +31,7 @@ import { join, relative } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { distributableViolations, iosStatus, type BuildProfile } from '@modulex/shared';
+import type { BuildJobs } from './build-workers.js';
 import type { StudioDb } from '../db/database.js';
 import { git, gitHead } from '../evolution/git.js';
 import { godotErrors } from '../project/project-factory.js';
@@ -52,7 +53,8 @@ export interface BuildResult {
   build_id: string;
   platform: Platform;
   profile: BuildProfile;
-  status: 'BUILT' | 'PREPARED' | 'BLOCKED' | 'FAILED';
+  /** SIGNED: a signed iOS build returned by a paired macOS build worker (Phase 11). */
+  status: 'BUILT' | 'PREPARED' | 'SIGNED' | 'BLOCKED' | 'FAILED';
   artifacts: { path: string; sha256: string; size: number }[];
   errors: string[];
   note: string | null;
@@ -66,6 +68,15 @@ export interface BuildServiceOptions {
   /** Android SDK path from editor settings / Setup Assistant; unset → Android is BLOCKED. */
   androidSdk?: string | null;
   now?: () => Date;
+  /**
+   * Remote build workers (Phase 11). With a paired macOS worker online, iOS is exported and signed there from the
+   * prepared snapshot; without one, iOS stays PREPARED. Signing material never leaves the worker.
+   */
+  remote?: Pick<BuildJobs, 'run'> | null;
+  /** The worker-side signing profile NAME used for iOS (Settings → Build). Null → no signed build is attempted. */
+  iosSigningProfile?: string | null | (() => string | null);
+  /** Pinned Godot version sent to workers (compat.json). */
+  godotVersion?: string;
 }
 
 export async function sha256File(path: string): Promise<string> {
@@ -183,13 +194,58 @@ export class BuildService {
     };
 
     if (req.platform === 'ios') {
+      const prep = await this.prepareIos(req);
+      const remote = this.o.remote;
+      const sp = this.o.iosSigningProfile;
+      const profile = (typeof sp === 'function' ? sp() : sp) ?? null;
+      if (remote && profile) {
+        const r = await remote.run({
+          idempotencyKey: `${req.projectId}|ios|${req.profile}|${req.version}|${prep.sha256}`,
+          projectId: req.projectId,
+          platform: 'ios',
+          profile: req.profile,
+          preset: PRESET.ios,
+          version: req.version,
+          assembly: req.assembly,
+          godotVersion: this.o.godotVersion ?? '4.5.1',
+          bundlePath: prep.path,
+          signingProfile: profile,
+          outDir: join(this.outDir(req), 'signed'),
+        });
+        const ipa = r.artifacts.find((a) => a.path.endsWith('.ipa'));
+        const st = iosStatus({
+          preparationDone: true,
+          macWorkerOnline: r.status !== 'BLOCKED',
+          signedIpaSha256: r.status === 'SUCCEEDED' && r.signed && ipa ? ipa.sha256 : null,
+          releaseRequested: req.profile === 'RELEASE',
+        });
+        if (st.status === 'SIGNED')
+          return finish({
+            status: 'SIGNED',
+            artifacts: [...r.artifacts, prep],
+            errors: [],
+            note: `SIGNED on build worker ${r.worker_id} (job ${r.job_id})`,
+          });
+        if (r.status === 'FAILED')
+          return finish({
+            status: 'FAILED',
+            artifacts: [prep],
+            errors: [`macOS build worker: ${r.message}`],
+            note: `job ${r.job_id}; the prepared snapshot is kept`,
+          });
+        return finish({
+          status: 'PREPARED',
+          artifacts: [prep],
+          errors: [],
+          note: `PREPARED — ${r.status === 'BLOCKED' ? r.message : `worker returned no signed .ipa (${r.status})`}`,
+        });
+      }
       const st = iosStatus({
         preparationDone: true,
         macWorkerOnline: false,
         signedIpaSha256: null,
         releaseRequested: req.profile === 'RELEASE',
       });
-      const prep = await this.prepareIos(req);
       return finish({
         status: 'PREPARED',
         artifacts: [prep],
@@ -197,7 +253,9 @@ export class BuildService {
         note:
           st.status === 'BLOCKED'
             ? `PREPARED — ${st.reason}`
-            : 'PREPARED — final signed build requires the macOS/Xcode build worker',
+            : remote
+              ? 'PREPARED — no iOS signing profile selected for the macOS build worker'
+              : 'PREPARED — final signed build requires the macOS/Xcode build worker',
       });
     }
     if (req.platform === 'android' && !this.o.androidSdk)

@@ -25,6 +25,8 @@ import { Gateway } from './gateway/gateway.js';
 import { createHandlers } from './gateway/tool-handlers.js';
 import { createStudioMcpServer } from './mcp/studio-mcp.js';
 import { createPipelineEngine, type PipelineHostConfig } from './pipeline/engine.js';
+import { BuildJobs, listBuildWorkers, pairBuildWorker, type WritableVault } from './build/build-workers.js';
+import type { StudioDb } from './db/database.js';
 
 /** Proves the bundled sidecar carries the reused godot-cli library (Phase 0 spike 7). */
 const GODOT_CLI_EXPORTS = Object.keys(godotCli)
@@ -55,6 +57,13 @@ export interface CoreOptions {
   forceSafeMode?: boolean;
   /** Godot + project locations; when set, studio_game_create executes the pipeline (Phase 6). */
   pipeline?: PipelineHostConfig;
+  /** studio.db (Phase 4 schema). Build worker pairings and jobs live here (handles only, never secrets). */
+  db?: StudioDb | null;
+  /**
+   * The writable credential store bridge. Without it, build workers cannot be paired from Core (the owner endpoint
+   * reports BLOCKED); it never falls back to storing a token anywhere else.
+   */
+  vault?: WritableVault | null;
 }
 
 export interface CoreServer {
@@ -116,7 +125,19 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
         forceSafeMode: opts.forceSafeMode,
       })
     : null;
-  const pipeline = opts.pipeline ? createPipelineEngine(opts.pipeline, { store, audit, redactor }) : null;
+  const db = opts.db ?? null;
+  const vault = opts.vault ?? null;
+  const buildJobs = db && vault ? new BuildJobs({ db, vault, redactor, audit }) : null;
+  const iosSigningProfile = () =>
+    db?.get<{ value: string }>("SELECT value FROM settings WHERE key = 'build.ios_signing_profile'")?.value ?? null;
+  const pipeline = opts.pipeline
+    ? createPipelineEngine(
+        { db: db ?? undefined, remote: buildJobs, iosSigningProfile, ...opts.pipeline },
+        { store, audit, redactor },
+      )
+    : null;
+  // Phase 11/12: follow every build job that was not terminal when Core last stopped (never resubmits a new job).
+  void buildJobs?.resume().catch((e: Error) => console.error(`[modulex-core] build job resume: ${e.message}`));
   const gateway = new Gateway({ audit, store, handlers, system, pipeline });
   const startedAt = Date.now();
   let port = 0;
@@ -220,6 +241,45 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
       if (req.method === 'GET' && url.pathname === '/audit') return send(res, 200, audit.list());
       if (req.method === 'GET' && url.pathname === '/audit/verify')
         return send(res, 200, { broken_at: audit.verify() });
+      if (url.pathname === '/build-workers' && req.method === 'GET')
+        return send(res, 200, db ? listBuildWorkers(db) : []);
+      if (url.pathname === '/build-workers/pair' && req.method === 'POST') {
+        if (!db || !vault)
+          return send(res, 503, {
+            status: 'BLOCKED',
+            error: 'The credential store bridge is not available in this Studio build; build workers cannot be paired.',
+          });
+        const b = (await readJson(req)) as { url?: string; code?: string; name?: string };
+        try {
+          const rec = await pairBuildWorker({
+            url: String(b.url ?? ''),
+            code: String(b.code ?? ''),
+            name: String(b.name ?? 'Build worker'),
+            db,
+            vault,
+            redactor,
+            audit,
+          });
+          return send(res, 200, rec);
+        } catch (e) {
+          return send(res, 400, { status: 'FAILED', error: (e as Error).message });
+        }
+      }
+      if (url.pathname === '/build-workers/ios-signing-profile' && req.method === 'POST') {
+        if (!db) return send(res, 503, { status: 'BLOCKED', error: 'studio.db is not available' });
+        const b = (await readJson(req)) as { name?: string | null };
+        const name = b.name ?? null;
+        if (name !== null && !/^[A-Za-z0-9._-]{1,64}$/.test(name))
+          return send(res, 400, { error: 'invalid signing profile name' });
+        if (name === null) db.run("DELETE FROM settings WHERE key = 'build.ios_signing_profile'");
+        else
+          db.run(
+            "INSERT INTO settings (key, value, updated_at) VALUES ('build.ios_signing_profile', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            name,
+            new Date().toISOString(),
+          );
+        return send(res, 200, { ios_signing_profile: name });
+      }
       if (req.method === 'POST' && url.pathname === '/claude-desktop/health-test')
         return send(res, 200, await claudeHealthTest());
       if (system) {

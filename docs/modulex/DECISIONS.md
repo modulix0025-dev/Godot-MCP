@@ -806,3 +806,63 @@ tier plus a scripted playtest on the project's own playtest server) and the `Fix
 **Failure attribution.** `godotErrors` now keeps the GDScript `at: … (res://…:N)` frame on a `SCRIPT ERROR`
 line. Without the frame, a headless scene-run failure had no file. The fix loop then logged "names no file",
 spent its attempts, and could not name the unfixable script in its BLOCKED summary.
+
+## D-051 · Remote build workers: protocol, trust and resumability (DECIDED, built)
+
+**Worker** (`studio/worker`, `modulex-build-worker`). A Node HTTP(S) service. Its protocol lives in
+`@modulex/shared` (`build-worker.ts`), so Core and the worker validate the same shapes.
+
+- **TLS is mandatory** unless the worker binds to loopback only. There is no flag for plain HTTP on a reachable
+  interface. The Studio client refuses `http://` for anything but loopback, and refuses URLs that carry
+  credentials.
+- **Pairing.**
+  1. `modulex-build-worker pair` prints a one-time code (`XXXX-XXXX`) on the worker host. It is valid for
+     10 minutes, works once, and is burnt after 5 wrong attempts.
+  2. The Studio exchanges the code once for a `mxw_` token.
+  3. The worker stores only the token's SHA-256 and compares hashes in constant time. A copied state directory is
+     therefore not a credential.
+- **Jobs.**
+  - `bj_` ids are client-generated and idempotent. The same spec returns the same job; a different spec under the
+    same id is refused with 409.
+  - The bundle upload must match the size and sha256 in the spec before the job is queued.
+  - Artifact names resolve inside the job's `out/` only.
+- **Restart.** A job that was `running` when the worker died becomes `failed/worker_restarted`, because its outcome
+  is unknown. Queued jobs run again.
+- **Signing.** The worker exports with Godot, verifying `godot --version` against the pinned version. For iOS with
+  a signing profile it then runs `xcodebuild archive` and `xcodebuild -exportArchive`. The profile is a NAME the
+  Studio sends; its directory (`ExportOptions.plist`, team id) lives on the worker. Certificates and provisioning
+  profiles stay in the worker's keychain. Capabilities list profile names only.
+- **Install.** On macOS the worker runs as a LaunchAgent (`launchd/com.modulex.build-worker.plist`): a user
+  session, so `xcodebuild` can reach the login keychain.
+
+**Studio** (`core/src/build/build-workers.ts`). Same rules as the ComfyUI jobs (D-044):
+
+- The `build_jobs` row (schema v2, `m0002_build_jobs`) is written **before** the worker hears about the job.
+- `resume()` at Core start follows every unfinished row by its persisted job id. Re-POSTing is idempotent, so a
+  kill -9 at any point never creates a second job.
+- `worker_restarted` is retried **once** with a new job id under the same idempotency key.
+- Artifacts are downloaded size-capped and checked against the worker's sha256.
+- Worker minutes go to `cost_ledger` (`build_worker_minutes`).
+- `BuildService`: iOS with a paired macOS worker and a selected signing profile gives **SIGNED** (`iosStatus`,
+  with the .ipa sha256). Without either, iOS stays **PREPARED**, and the note says why.
+
+**GATE 11.**
+
+- **Mock suite** (`core/tests/build-workers.test.ts`): the real worker service in-process with a fake export
+  runner. 10/10, stable over 5 consecutive runs. It covers pairing, idempotency, cancel, a Core kill mid-build, a
+  Core kill between "row written" and "worker answered", a worker restart, a tampered artifact, a runner failure,
+  and SIGNED vs PREPARED.
+- **Live macOS test:** **BLOCKED**. There is no Mac in this environment, and the test prints that.
+
+## D-052 · Build worker tokens need the credential store bridge; until then pairing is BLOCKED (DECIDED)
+
+The worker token is a secret, so it may live only in Windows Credential Manager (Execution Patch 1). Core holds a
+`secret://buildworker/<id>/token` handle, and `studio.db` stores that handle only.
+
+The Rust shell can already read and write Credential Manager (`keyring`, used for the stable agent and pairing
+tokens). However, Core has no channel yet to ask the shell to **store** a new secret at runtime.
+
+- Until that bridge exists (Phase 13), `POST /build-workers/pair` answers **503 BLOCKED**: "credential store bridge
+  not available". It never falls back to a file, the database or an environment variable.
+- `startCore({ vault })` accepts the bridge as soon as it exists. The tests use `MemoryVault`.
+- `studio.db` itself is now opened by `main.ts` under `MODULEX_DATA_DIR`. This is a prerequisite of Phase 12.

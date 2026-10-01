@@ -15,7 +15,7 @@ export interface DbMigration {
   sql: string;
 }
 
-/** Schema v1 — the Phase 4 table set. */
+/** Schema v1 — the Phase 4 table set; v2 adds the Phase 11 build worker tables. */
 export const MIGRATIONS: DbMigration[] = [
   {
     id: 'm0001_initial',
@@ -94,6 +94,24 @@ CREATE TABLE cost_ledger (
 );
 CREATE TABLE budgets (scope TEXT PRIMARY KEY, usd_cap REAL NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+`,
+  },
+  {
+    // Phase 11: remote build worker jobs. A row is written BEFORE the job is sent (like comfy_jobs), so a Core
+    // restart reconciles it with the worker instead of submitting a duplicate.
+    id: 'm0002_build_jobs',
+    version: 2,
+    sql: `
+CREATE TABLE build_workers (
+  worker_id TEXT PRIMARY KEY, url TEXT NOT NULL, name TEXT NOT NULL, token_ref TEXT NOT NULL,
+  data TEXT NOT NULL DEFAULT '{}', paired_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE build_jobs (
+  job_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL, worker_id TEXT NOT NULL, project_id TEXT NOT NULL,
+  platform TEXT NOT NULL, state TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1, spec TEXT NOT NULL,
+  view TEXT, local TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX build_jobs_key ON build_jobs (idempotency_key);
 `,
   },
 ];

@@ -46,6 +46,7 @@ export const AUDIT_EVENTS = [
   'pipeline_stage_completed',
   'pipeline_resumed',
   'build_completed',
+  'build_job_submitted',
   // System Evolution (Execution Patch 2 §17, §20, §22, §28)
   'config_change_proposed',
   'config_changed',
