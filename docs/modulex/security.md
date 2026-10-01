@@ -78,10 +78,30 @@ and **identical arguments**. Any other arguments are refused.
 - the Claude Desktop pairing token;
 - worker credentials (`secret_ref`).
 
-The shell bridge is `credentials.rs`, using the `keyring` crate's native Windows backend. **Status:** the
-shell stores and restores the agent and pairing tokens. The UI flows that write the Claude API key and
-worker secrets arrive with the production Settings screens (Phase 13). Until then, Core's `SecretVault`
-interface is served by `MemoryVault` in tests.
+The shell bridge is `credentials.rs`, using the `keyring` crate's native Windows backend.
+
+**Status.**
+
+- The shell stores and restores the agent and pairing tokens.
+- Core stores and resolves other secrets at runtime through the **vault bridge** (D-056): `vault-request` /
+  `vault-response` lines over the sidecar's private stdio. Build worker tokens use it today.
+- The installed self-test proves a store, read-back and delete round-trip in Credential Manager on every Windows
+  CI run.
+- The UI flows that write the Claude API key arrive with the production Settings screens.
+
+**Code signing (Phase 13, D-057).** The Authenticode certificate is the owner's.
+
+- It lives only in the repository's GitHub Actions secrets: `WINDOWS_SIGNING_PFX_BASE64`, the base64 of the
+  `.pfx`, and `WINDOWS_SIGNING_PFX_PASSWORD`.
+- CI decodes it into the runner's temp directory for the build only.
+- It is never committed, logged or bundled.
+
+Without the secret the installers are built **unsigned**, and CI says so. Windows SmartScreen then warns on first
+run ("Windows protected your PC" → *More info* → *Run anyway*). A signed build accumulates SmartScreen reputation
+under the certificate.
+
+To enable signing, the owner runs `[Convert]::ToBase64String([IO.File]::ReadAllBytes('cert.pfx'))` locally and
+adds both secrets in *Settings → Secrets and variables → Actions*.
 
 **Where secrets never go:** SQLite, the JSON store, logs, audit events, prompts, git, project files,
 screenshots, handoff links or tool results.

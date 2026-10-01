@@ -1016,3 +1016,18 @@ Core never touches Credential Manager directly. The Tauri shell does, through `k
   timeout, and pairing through the bridge with the token only in the store.
 - `--selftest` calls `/vault/selftest`, and **Windows CI requires `vault_ok == true`** for both installers. That
   is a real Credential Manager round-trip on `windows-latest`.
+
+## D-057 · Authenticode signing in CI, only with the owner's certificate (DECIDED, built)
+
+Signing runs through Tauri's `bundle.windows.signCommand`, so the app executable, the bundled binaries and the NSIS
+installer are each signed.
+
+- **The config file.** CI generates `tauri.sign.conf.json` only when the `WINDOWS_SIGNING_PFX_BASE64` secret
+  exists. It points `signCommand` at `studio/app/scripts/sign-windows.ps1`.
+- **The script.** It runs `signtool` with SHA-256 and an RFC 3161 timestamp, and fails unless
+  `Get-AuthenticodeSignature` reports `Valid`.
+- **The status step.** A final step prints the Authenticode status of both installers. It fails if signing was
+  enabled and a file is not validly signed.
+- **Without the secret.** The build is unsigned, with an explicit notice. Nothing is faked.
+
+The certificate never enters the repository (security.md §4).
