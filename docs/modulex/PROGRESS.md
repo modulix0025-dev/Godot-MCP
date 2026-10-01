@@ -17,7 +17,7 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | Execution Patch 2 · System Evolution | **Done up to the phase boundaries** (see below) | green (below) |
 | 4 · Core foundation | **Done** | GATE 4 live suite 6/6 against a real Godot 4.5.1 editor (locally and in CI) |
 | 5–6 · Gateway + pipeline engine | **Done.** Playtest, visual and optimization stages report PARTIAL_SUCCESS until Phase 9. | GATE 6 live: spec → exported builds (locally and in CI job `studio-pipeline`) |
-| 10 · Template + Build Service | **Windows, iOS-prep and Android-BLOCKED paths done.** The Windows-host smoke runs in CI job `windows-smoke`. | GATE 6 run; GATE 10 (`windows-smoke`, see below) |
+| 10 · Template + Build Service | **Done.** Windows, iOS-prep and Android-BLOCKED paths; GATE 10 green on `windows-latest` (windowed, 10/10 QA scenarios, RELEASE alive 10 s). | GATE 6 run; GATE 10 (`windows-smoke`, see below) |
 | 7 · ComfyUI workers + jobs | **Done against the mock.** The live worker test is BLOCKED: no GPU worker (D-045). | GATE 7 mock suite 18/18; the live test reports BLOCKED |
 | 8 · Asset factory + Godot import | **Done** (D-046) | GATE 8: 14 fixture tests; live import into a real editor (a thumbnail under Xvfb) |
 | 9 · QA runner + fix loop | **Done** (D-047, D-049, D-050) | GATE 9 live: clean game 10/10 scenarios; 2 injected bugs detected, fixed, regression green; an unfixable bug ends BLOCKED |
@@ -380,7 +380,35 @@ CI job `windows-smoke` (`.github/workflows/test_modulex_qa.yml`, `windows-latest
 The test exports the sample game as Windows QA and RELEASE builds. The QA exe must pass every default scenario
 through its in-game runtime. The RELEASE exe, which has no MCP inside, must stay alive for 10 s. If the windowed run
 fails on the runner, the job retries with `MODULEX_SMOKE_HEADLESS=1`, and both the log and a workflow warning say so.
-The result of the first CI run is recorded below once it exists.
+
+**GATE 10: green on `windows-latest`, windowed (no headless fallback needed)**, run
+[36888838055](https://github.com/modulix0025-dev/Godot-MCP/actions/runs/36888838055), commit `2c94c4a`:
+
+```
+[gate10] godot --import: ok
+[gate10] dotnet build: ok
+[gate10] QA: BUILT SpaceKidJourney.exe 94643712B ec7518a28cff, SpaceKidJourney.pck 388236B 89c231c4f174
+[gate10] RELEASE: BUILT SpaceKidJourney.exe 96823808B 3f1ecc1545ce, SpaceKidJourney.pck 388060B 5e76011e093e
+[gate10] mode: windowed
+[gate10] QA scenario boot / player-moves / no-fall-through / interact-and-jump / hud / pause-resume /
+         lose / win / level-2 / save-load: passed (10/10)
+[gate10] RELEASE alive true for 10000 ms (exit null)
+[gate10] Windows QA + RELEASE smoke: exercised
+ ✓ GATE 10 — Windows export + smoke test (QA and RELEASE)  208361ms
+```
+
+The same job runs the Setup Assistant against the live official sources first (`MODULEX_LIVE_SETUP=1`); every
+download is checksum-verified and the installed tools are run:
+
+```
+[setup-live] godot-mono: installed 4.5.1-stable mono sha512:168fb2502fe979f7a…
+[setup-live] mcp-server: installed 9.2.9 sha256:8878a10a32fe01670…
+[setup-live] dotnet-sdk: installed 8.0.425 sha512:f0b6f15bf6f1a0507…
+[setup-live] git: installed git version 2.55.0.windows.5
+[setup-live] godot --version: 4.5.1.stable.mono.official.f62fdbde1
+[setup-live] dotnet --version: 8.0.425
+[setup-live] official sources: exercised
+```
 
 ## Phase 11: remote build workers
 

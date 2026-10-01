@@ -119,10 +119,11 @@ function cargoCrates(previous) {
     );
     const rows = new Map();
     for (const raw of out.split(/\r?\n/)) {
-      // `cargo tree` marks repeated subtrees with " (*)"; strip it (after the CR on Windows).
+      // `cargo tree` marks repeated subtrees with "(*)". Remove it wherever it lands: on Windows the line does not
+      // end with it (CI saw "MIT (*)" survive an end-anchored strip), so never rely on its position.
       const [p, l] = raw
+        .replace(/\s*\(\*\)/g, '')
         .trim()
-        .replace(/ \(\*\)$/, '')
         .split('\t');
       const m = /^(\S+) v(\S+)/.exec(p ?? '');
       if (m && m[1] !== 'modulex-game-studio')
