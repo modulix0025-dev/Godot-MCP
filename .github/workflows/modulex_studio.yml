@@ -173,6 +173,11 @@ jobs:
           if (-not $app) { throw "installed app not found under LOCALAPPDATA" }
           "Installed at: $($app.DirectoryName)"
           Get-ChildItem $app.DirectoryName -Recurse | Select-Object -ExpandProperty FullName
+          # Phase 14: the licence texts ship with the app.
+          foreach ($l in @('LICENSE.txt', 'THIRD_PARTY_LICENSES.md', 'NODE_LICENSE.txt')) {
+            $f = Get-ChildItem $app.DirectoryName -Recurse -Filter $l | Select-Object -First 1
+            if (-not $f) { throw "licence file $l is not installed" }
+          }
           $report = Join-Path $env:RUNNER_TEMP 'modulex-selftest.json'
           $t = Start-Process $app.FullName -ArgumentList '--selftest', $report -Wait -PassThru
           Get-Content $report

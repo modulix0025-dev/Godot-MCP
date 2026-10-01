@@ -1064,3 +1064,38 @@ cover:
 
 Until all three exist, the in-app updater stays disabled. That is the documented default: never automatic, and
 "check for updates" offers nothing it cannot verify.
+
+## D-059 · Licence inventory from the real sources, enforced by a test (DECIDED, built)
+
+`studio/scripts/third-party-licenses.mjs` generates `studio/third-party-licenses.json` and
+`docs/modulex/THIRD_PARTY_LICENSES.md`. Nothing is listed by hand except the runtimes and the NuGet pins, which have
+no machine source.
+
+| Section | Source |
+|---|---|
+| Core | the **esbuild metafile** of the production bundle: exactly what ships |
+| Core-declared-but-not-bundled | Core's `package.json` graph, minus the bundle |
+| UI | the lockfile graph of `app/ui` |
+| Rust crates | `cargo tree -e normal --target x86_64-pc-windows-msvc` |
+| Models | the workflow `license_facts` |
+| Bundled/installed runtimes | listed, with how each is shipped |
+
+`core/tests/licenses.test.ts` fails when:
+
+- the committed inventory differs from a fresh one (bundle, lockfile, models; crates when cargo exists);
+- any shipped npm package or Rust crate is outside the policy. The policy is permissive licences, plus MPL-2.0
+  (crates, unmodified) and OFL-1.1 (UI fonts). It excludes GPL, LGPL, AGPL, SSPL and unknown licences.
+
+Copyleft runtimes are separate programs, never linked, and are listed as such:
+
+- MinGit and the JDK, both GPL-2.0;
+- ComfyUI, GPL-3.0, which is never distributed.
+
+The installers ship `licenses/LICENSE.txt`, `THIRD_PARTY_LICENSES.md` and `NODE_LICENSE.txt`, and CI checks that
+they are installed.
+
+**Finding.** The metafile shows that the bundled Core does not reach `@gltf-transform/functions`, `meshoptimizer`
+or `@anthropic-ai/sdk`. The Phase 8 asset processing (`assets/process.ts`) and the Mode A provider are library code
+exercised by tests, but no path from `main.ts` reaches them yet. They are listed under "declared but not bundled",
+and they move to the shipped section automatically once wired. Wiring the asset factory into
+`asset_generation`/`asset_processing`, behind a TRUSTED ComfyUI worker, is open work (see PROGRESS).
