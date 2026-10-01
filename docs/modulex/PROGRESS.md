@@ -24,8 +24,20 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | 11 · Remote build workers | **Done against a mock runner** (D-051). Pairing from the UI is BLOCKED until the credential store bridge exists (D-052). Live Mac: BLOCKED (no Mac). | GATE 11 mock suite 10/10 (stable 5×); the live macOS test reports BLOCKED |
 | 12 · Resumability, completion predicate, cost | **Done** (D-053) | GATE 12: kill at scene 17/30 → resumes at 17; kill mid-generation → 1 ComfyUI job; kill mid-build → 1 worker job; predicate tested over all 131,072 missing-evidence combinations |
 | 13 · Desktop app, Setup Assistant, installer, updates | **Mostly done.** Production UI (D-060), Setup Assistant (D-055), credential store bridge (D-056), code signing when the certificate exists (D-057), updater verification (D-058). Open: the updater restart handoff and the signing key (owner), shortcut/WebDriver install test, upgrade test. | Windows CI: both installers installed silently and self-tested; full installer `pipeline.available=true`, `qaTier=true`; `vault_ok=true` (a real Credential Manager round-trip) |
-| 14 · Self-test, docs, licences | **Licences done** (D-059). The self-test runs in CI. User documentation is open. | `licenses.test.ts`: the inventory matches the real bundle; no disallowed licence ships |
+| 14 · Self-test, docs, licences | **Done.** Licences (D-059); the self-test runs in CI on both installers; the owner's guide is [`USER_GUIDE.md`](USER_GUIDE.md). | `licenses.test.ts`: the inventory matches the real bundle; no disallowed licence ships |
 | 15 · Acceptance with evidence | **In progress.** A live end-to-end run of the bundled Core: Claude Desktop creates a game; the pipeline creates, builds, playtests (10/10) and regression-tests it; the build is honestly BLOCKED (no templates on this host). Screenshots of the production UI on that run (D-061). | `docs/modulex/ui/production/*.png`; Windows builds and the smoke test in CI (GATE 6 and GATE 10) |
+
+**CI on `42527ca`: all three workflows green.**
+
+| Workflow | Run | Jobs |
+|---|---|---|
+| CI | [36892847106](https://github.com/modulix0025-dev/Godot-MCP/actions/runs/36892847106) | build + xUnit + CLI |
+| Test ModuleX QA (live) | [36892846762](https://github.com/modulix0025-dev/Godot-MCP/actions/runs/36892846762) | GATE 4, 8, 9 (Linux, Xvfb); GATE 6; `windows-smoke`: Setup Assistant live + GATE 10 |
+| ModuleX Studio | [36892846995](https://github.com/modulix0025-dev/Godot-MCP/actions/runs/36892846995) | Linux lint/format/build/typecheck/tests; Windows tests, small + full installer silently installed, self-tested (`vault_ok`, full: `pipeline.available=True qaTier=True`), uninstalled (exit 0); both installers `NotSigned` (no certificate secret configured) |
+
+The Windows licence test needed three attempts. The cause was the job's `CARGO_TERM_COLOR=always`: it wraps
+`cargo tree`'s "(*)" marker in ANSI codes. The minisign fixtures are now pinned `-text`, because a CRLF checkout
+changed the signed bytes.
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
