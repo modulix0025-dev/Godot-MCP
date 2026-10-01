@@ -178,6 +178,7 @@ export const BUILD_TONE: Record<BuildRecord['status'], Tone> = {
 
 /** `asset_generation` → "Asset generation". */
 export function stageLabel(id: string): string {
+  if (id === 'qa') return 'QA';
   const s = id.replace(/_/g, ' ');
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

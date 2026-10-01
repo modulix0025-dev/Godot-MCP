@@ -634,7 +634,7 @@ export interface PipelineHostConfig {
   budget?: PipelineEngineOptions['budget'];
   /** gamedev-mcp-server binary for the playtest server (MODULEX_SERVER); unset → boot-only playtest. */
   serverBinary?: string | null;
-  /** Run the playtest game windowed (screenshots need a GPU/display). Default true. */
+  /** Run the playtest game windowed (screenshots need a display). Default: Windows, or DISPLAY set. */
   windowed?: boolean;
   /** Paired remote build workers (Phase 11): iOS is signed on a macOS worker when one is online. */
   remote?: BuildServiceOptions['remote'];
@@ -670,7 +670,8 @@ export function createQaTier(
           audit,
           redactor,
           db: host.db,
-          windowed: host.windowed ?? true,
+          // Screenshots need a display: Windows always has one; elsewhere only with DISPLAY (e.g. Xvfb).
+          windowed: host.windowed ?? (process.platform === 'win32' || Boolean(process.env.DISPLAY)),
         }),
     });
     return { runner, dir };
