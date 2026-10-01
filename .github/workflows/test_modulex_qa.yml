@@ -282,10 +282,20 @@ jobs:
           (cd cli && npm ci && npm run build)
           (cd studio && npm ci && npm run build -w @modulex/shared)
 
+      - name: Setup Assistant — live official sources (Godot, MCP server, .NET 8 SDK, Git; checksum-verified)
+        run: |
+          set -euo pipefail
+          cd studio/core
+          MODULEX_LIVE_SETUP=1 MODULEX_LIVE_SETUP_COMPONENTS=godot-mono,mcp-server,dotnet-sdk,git \
+            npx vitest run --reporter=verbose tests/setup-live.test.ts 2>&1 | tee ../../setup-live.log
+          grep -q "official sources: exercised" ../../setup-live.log
+
       - name: GATE 10 — Windows export + smoke (windowed, headless fallback)
         env:
           MODULEX_LIVE_SERVER: ${{ steps.server.outputs.bin }}
         run: |
+          # The default Actions bash runs with -e; the windowed attempt may fail and must fall through to the retry.
+          set +e
           set -uo pipefail
           # setup-godot puts a symlink shim (~/bin/godot, no .exe) on PATH, which Git Bash cannot resolve and which
           # Node cannot spawn reliably. Use the real executable from setup-godot's install folder; fail if absent.
@@ -314,6 +324,7 @@ jobs:
           name: windows-smoke-evidence
           path: |
             gate10.log
+            setup-live.log
             gate10-games/space-kid-journey/build-output/0.1.0/logs/
           if-no-files-found: ignore
           retention-days: 7

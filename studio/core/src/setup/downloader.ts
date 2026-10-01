@@ -17,7 +17,7 @@ import { pipeline } from 'node:stream/promises';
 export interface DownloadSpec {
   url: string;
   dest: string;
-  algorithm: 'sha256' | 'sha512';
+  algorithm: 'sha1' | 'sha256' | 'sha512';
   /** Expected hex digest (from the official checksum file). */
   digest: string;
 }
@@ -28,7 +28,7 @@ export interface DownloadProgress {
   resumed: boolean;
 }
 
-export async function fileDigest(path: string, algorithm: 'sha256' | 'sha512'): Promise<string> {
+export async function fileDigest(path: string, algorithm: 'sha1' | 'sha256' | 'sha512'): Promise<string> {
   const h = createHash(algorithm);
   await pipeline(createReadStream(path), h);
   return h.digest('hex');
@@ -38,7 +38,7 @@ export async function fileDigest(path: string, algorithm: 'sha256' | 'sha512'): 
 export function parseChecksums(text: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
-    const m = /^([0-9a-fA-F]{64,128})\s+\*?(.+)$/.exec(line.trim());
+    const m = /^([0-9a-fA-F]{40,128})\s+\*?(.+)$/.exec(line.trim());
     if (m) out.set(m[2]!.trim(), m[1]!.toLowerCase());
   }
   return out;

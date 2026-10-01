@@ -70,8 +70,8 @@ namespace ModuleX.Studio.Tools
                 return result;
             }
 
-            // Budget: holdFrames at a pessimistic 10 fps, plus slack — the frame counter, not wall time, decides.
-            var budget = TimeSpan.FromSeconds(hold / 10.0 + 5);
+            // Budget: holdFrames at a pessimistic MinBudgetFps, plus slack — the frame counter, not wall time, decides.
+            var budget = TimeSpan.FromSeconds(GameToolSpecs.FrameBudgetSeconds(hold, 5, capSeconds: 120));
             WaitUntil(() => Engine.GetProcessFrames() - startFrame >= (ulong)hold, budget);
 
             var endFrame = OnMain(() =>

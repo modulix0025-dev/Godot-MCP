@@ -916,3 +916,65 @@ until the production UI needs queries over it.
 - "Kill mid-build" is in `build-workers.test.ts` (GATE 11).
 - `shared/tests/completion.test.ts`: all 131,072 combinations of missing evidence, every single failing row, the
   platform rules and NEEDS_HUMAN.
+
+## D-054 · Frame-bounded QA waits tolerate 2 fps (DECIDED, built)
+
+**Finding (GATE 10, first Windows run, `windows-latest`).** The exported QA build connected, and `boot` and
+`level-2` passed. Every scenario with a `wait frames=30` step failed: `wait not satisfied`. The tool's wall-clock
+budget assumed at least 10 fps (30 frames in 5 s). A windowed game on the runner's software renderer, with no GPU,
+runs slower than that.
+
+**Fix** (`addons/modulex_studio` only):
+
+- `GameToolSpecs.FrameBudgetSeconds(frames, slack, cap)` assumes `MinBudgetFps = 2`.
+  - `game-wait` is capped at `MaxWaitSeconds` (30 s).
+  - The `game-input-action` hold is capped at 120 s.
+- The frame counter still decides, so a normal game returns as soon as the frames have elapsed. A really stuck game
+  is still caught by the runner's hang detection: the frame counter not moving for 5 s.
+- xUnit covers the budget.
+
+**CI.** The windowed attempt's failure never reached the headless retry, because the Actions bash runs with `-e`.
+The step now uses `set +e`, so the documented fallback (`MODULEX_SMOKE_HEADLESS=1`, with a workflow warning)
+really runs.
+
+## D-055 · Setup Assistant: sources, checksums, state and runtime enablement (DECIDED, built)
+
+`core/src/setup/assistant.ts` installs, per user and without admin rights, what the installer did not bundle.
+
+| Component | Source | Checksum (fail-closed) |
+|---|---|---|
+| Godot 4.5.1 mono | godot-builds release | `SHA512-SUMS.txt` |
+| Export templates (`.tpz`, the `version.txt` must say `4.5.1.stable.mono`) | godot-builds release | `SHA512-SUMS.txt` |
+| .NET 8 SDK (private, `DOTNET_ROOT`) | Microsoft `releases.json`, latest SDK | its published SHA-512 |
+| gamedev-mcp-server 9.2.9 | GameDev-MCP-Server release | `SHA256SUMS` |
+| Git | on PATH, or MinGit (Windows) | the GitHub release asset `digest` |
+| JDK 17 | Adoptium API | its sha256 |
+| Android SDK (cmdline-tools, then `sdkmanager` for the Godot 4.5 set) | Google `repository2-3.xml` | its SHA-1 |
+| Android build template | `android_source.zip` from the export templates | — |
+
+**How it installs.**
+
+- Downloads resume (`.part` + Range).
+- Archives are extracted into a temp folder and renamed into place, so a half-extracted tree is never used.
+- State is persisted after every step (`setup/state.json`, atomic).
+- Components the full installer bundled (`MODULEX_GODOT`, `MODULEX_SERVER`) are recorded as `bundled`, without a
+  download.
+- The Android SDK licence is the owner's to accept. Without `accept_android_license`, the component stays
+  `needs_owner` and nothing runs.
+
+**Core.**
+
+- Owner-only `GET /setup` returns the components, the plan for the `build_preferences` platforms, the progress and
+  the pipeline capabilities. `POST /setup/install` takes `{component, accept_android_license}` and is audited.
+- Once Godot is installed, and the shell has passed the projects root and the addons source, Core builds the
+  pipeline engine and hands it to the Gateway **without a restart**. It never swaps an engine under a running
+  pipeline.
+
+**Evidence.**
+
+- 7 tests against a local mirror of every source: checksum, tampering, resume, bundled/detected, Android consent,
+  and the endpoint enabling the pipeline.
+- Live against the official sources on Linux: Godot (sha512 verified) and the server (sha256 verified) installed,
+  and `godot --version` = `4.5.1.stable.mono.official.f62fdbde1` from the installed copy.
+- `.NET` is refused by this environment's egress proxy (`builds.dotnet.microsoft.com` 403). The Windows CI job runs
+  the live test with `godot-mono,mcp-server,dotnet-sdk,git`.

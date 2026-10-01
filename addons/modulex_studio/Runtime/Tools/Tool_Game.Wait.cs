@@ -114,9 +114,11 @@ namespace ModuleX.Studio.Tools
                 return target();
             };
 
-            // Frame waits get a wall-clock budget of frames at a pessimistic 10 fps, capped by MaxWaitSeconds.
+            // Frame waits get a wall-clock budget of frames at a pessimistic MinBudgetFps (software-rendered CI
+            // runners and slow machines run a windowed game at a few fps), capped by MaxWaitSeconds. The frame
+            // counter, not wall time, decides: a fast game still returns as soon as the frames have elapsed.
             var budget = frames != null && !hasNode && !hasSignal
-                ? Math.Min(clampedFrames / 10.0 + 2, GameToolSpecs.MaxWaitSeconds)
+                ? GameToolSpecs.FrameBudgetSeconds(clampedFrames, 2)
                 : timeoutSeconds;
             var satisfied = WaitUntil(done, TimeSpan.FromSeconds(budget));
             var pureSeconds = frames == null && !hasNode && !hasSignal;

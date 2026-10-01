@@ -7,7 +7,14 @@
 import type { Platform } from './build-profiles.js';
 
 export type ComponentId =
-  'godot-mono' | 'export-templates' | 'dotnet-sdk' | 'jdk' | 'android-sdk' | 'android-build-template' | 'git';
+  | 'godot-mono'
+  | 'export-templates'
+  | 'dotnet-sdk'
+  | 'mcp-server'
+  | 'jdk'
+  | 'android-sdk'
+  | 'android-build-template'
+  | 'git';
 
 export interface SetupComponent {
   id: ComponentId;
@@ -50,10 +57,21 @@ export const SETUP_COMPONENTS: SetupComponent[] = [
     id: 'dotnet-sdk',
     label: '.NET 8 SDK (private install)',
     version: '8.0',
-    source: 'https://dot.net/v1/dotnet-install.ps1 (channel 8.0)',
-    checksumSource: 'dotnet-install verifies the official release manifest',
+    source: 'https://builds.dotnet.microsoft.com/dotnet/release-metadata/8.0/releases.json (latest SDK, win-x64 zip)',
+    checksumSource: 'the SHA-512 hash published for that file in releases.json',
     approxSizeMb: 220,
     licence: 'MIT',
+    requiredFor: 'always',
+    inFullInstaller: true,
+  },
+  {
+    id: 'mcp-server',
+    label: 'gamedev-mcp-server 9.2.9 (editor + playtest servers)',
+    version: '9.2.9',
+    source: 'https://github.com/IvanMurzak/GameDev-MCP-Server/releases/download/v9.2.9/gamedev-mcp-server-win-x64.zip',
+    checksumSource: 'https://github.com/IvanMurzak/GameDev-MCP-Server/releases/download/v9.2.9/SHA256SUMS',
+    approxSizeMb: 45,
+    licence: 'Apache-2.0',
     requiredFor: 'always',
     inFullInstaller: true,
   },

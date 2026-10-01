@@ -86,7 +86,7 @@ export class Gateway {
   private readonly costThreshold: number;
   private readonly now: () => Date;
   readonly system: SystemServices | null;
-  readonly pipeline: PipelineEngine | null;
+  pipeline: PipelineEngine | null;
 
   constructor(o: GatewayOptions) {
     this.system = o.system ?? null;
@@ -98,6 +98,11 @@ export class Gateway {
     this.ttl = o.approvalTtlMs ?? 30 * 60_000;
     this.costThreshold = o.costThresholdUsd ?? 0.25;
     this.now = o.now ?? (() => new Date());
+  }
+
+  /** A Setup Assistant install made the pipeline (or a new component of it) available without a Core restart. */
+  setPipeline(engine: PipelineEngine | null): void {
+    this.pipeline = engine;
   }
 
   // ---------- Developer Mode (owner only) ----------

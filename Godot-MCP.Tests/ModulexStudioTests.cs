@@ -262,6 +262,18 @@ namespace com.IvanMurzak.Godot.MCP.Tests
         public void Hold_frames_are_clamped(int input, int expected) => Assert.Equal(expected, GameToolSpecs.ClampHoldFrames(input));
 
         [Theory]
+        [InlineData(30, 2, 17)]     // 30 frames at 2 fps + 2 s slack (a software-rendered runner, GATE 10)
+        [InlineData(0, 2, 2)]
+        [InlineData(-5, 2, 2)]
+        [InlineData(3600, 2, 30)]   // capped by MaxWaitSeconds
+        public void Frame_budget_tolerates_slow_frame_rates(int frames, double slack, double expected)
+            => Assert.Equal(expected, GameToolSpecs.FrameBudgetSeconds(frames, slack));
+
+        [Fact]
+        public void Frame_budget_cap_is_configurable()
+            => Assert.Equal(120, GameToolSpecs.FrameBudgetSeconds(600, 5, capSeconds: 120));
+
+        [Theory]
         [InlineData(-1f, 0f)]
         [InlineData(0.4f, 0.4f)]
         [InlineData(7f, 1f)]

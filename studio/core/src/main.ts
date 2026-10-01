@@ -56,6 +56,11 @@ const options: CoreOptions = {
   // studio.db: build worker pairings (handles only) and jobs, so a restart resumes them. The writable credential
   // store bridge (vault) is Phase 13: until then pairing reports BLOCKED (D-051).
   db: dataDir ? new StudioDb(join(dataDir, 'studio.db')) : null,
+  // Known even before Godot is installed, so a Setup Assistant install can enable the pipeline without a restart.
+  locations: {
+    projectsRoot: env.MODULEX_PROJECTS_ROOT || undefined,
+    addonsSource: env.MODULEX_ADDONS_SOURCE || undefined,
+  },
   source: sourceWorkspace(env.MODULEX_SOURCE_REPO || undefined),
   forceSafeMode: env.MODULEX_SAFE_MODE === '1',
   pipeline:

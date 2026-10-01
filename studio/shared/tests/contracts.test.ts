@@ -393,7 +393,7 @@ describe('LLM settings', () => {
 describe('setup components (bootstrapper)', () => {
   it('Windows-only needs no Android tooling', () => {
     const ids = componentsNeeded(['windows'], new Set()).map((c) => c.id);
-    expect(ids).toEqual(['godot-mono', 'export-templates', 'dotnet-sdk', 'git']);
+    expect(ids).toEqual(['godot-mono', 'export-templates', 'dotnet-sdk', 'mcp-server', 'git']);
   });
   it('Android adds JDK + SDK; installed components are skipped', () => {
     const ids = componentsNeeded(['android'], new Set(['godot-mono'])).map((c) => c.id);

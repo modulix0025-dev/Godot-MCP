@@ -9,11 +9,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
+import { delimiter, join } from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
   DEFAULT_CONFIG,
+  SETUP_COMPONENTS,
+  type Platform,
   type ConfigDocId,
   type DevCapability,
   type Permission,
@@ -34,6 +37,7 @@ import { createPipelineEngine, type PipelineHostConfig } from './pipeline/engine
 import { BuildJobs, listBuildWorkers, pairBuildWorker, type WritableVault } from './build/build-workers.js';
 import type { StudioDb } from './db/database.js';
 import { Budget, type BudgetCaps } from './cost/budget.js';
+import { defaultTemplatesDir, SetupAssistant, type SetupAssistantOptions } from './setup/assistant.js';
 
 /** Proves the bundled sidecar carries the reused godot-cli library (Phase 0 spike 7). */
 const GODOT_CLI_EXPORTS = Object.keys(godotCli)
@@ -64,6 +68,12 @@ export interface CoreOptions {
   forceSafeMode?: boolean;
   /** Godot + project locations; when set, studio_game_create executes the pipeline (Phase 6). */
   pipeline?: PipelineHostConfig;
+  /** Where projects are created and the bundled addon sources (from the shell), independent of Godot. */
+  locations?: { projectsRoot?: string; addonsSource?: string };
+  /** Godot's export templates root (default: the per-user Godot location). */
+  templatesDir?: string;
+  /** Tests only: point the Setup Assistant at local mirrors of the official sources. */
+  setupOverrides?: Partial<SetupAssistantOptions>;
   /** studio.db (Phase 4 schema). Build worker pairings and jobs live here (handles only, never secrets). */
   db?: StudioDb | null;
   /**
@@ -141,18 +151,63 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
   const budget = db
     ? new Budget(db, () => system?.config.get<BudgetCaps>('budgets').value ?? DEFAULT_CONFIG.budgets)
     : null;
-  const pipeline = opts.pipeline
-    ? createPipelineEngine(
-        { db: db ?? undefined, remote: buildJobs, iosSigningProfile, budget, ...opts.pipeline },
-        { store, audit, redactor },
-      )
+  // Setup Assistant (Phase 13): installs what the installer did not bundle; components the shell already passed
+  // (full installer) count as installed.
+  const setup = opts.dataDir
+    ? new SetupAssistant({
+        dataDir: opts.dataDir,
+        templatesDir: opts.templatesDir ?? defaultTemplatesDir(),
+        bundled: {
+          ...(opts.pipeline?.godot ? { 'godot-mono': opts.pipeline.godot } : {}),
+          ...(opts.pipeline?.serverBinary ? { 'mcp-server': opts.pipeline.serverBinary } : {}),
+        },
+        ...opts.setupOverrides,
+      })
     : null;
+  /** The pipeline host from the shell's config, completed by what the Setup Assistant installed. */
+  const hostConfig = (): PipelineHostConfig | null => {
+    const installed = setup?.env() ?? {};
+    const godot = opts.pipeline?.godot ?? installed.MODULEX_GODOT;
+    const projectsRoot = opts.pipeline?.projectsRoot ?? opts.locations?.projectsRoot;
+    const addonsSource = opts.pipeline?.addonsSource ?? opts.locations?.addonsSource;
+    if (!godot || !projectsRoot || !addonsSource) return null;
+    const dotnetRoot = installed.DOTNET_ROOT;
+    return {
+      db: db ?? undefined,
+      remote: buildJobs,
+      iosSigningProfile,
+      budget,
+      serverBinary: installed.MODULEX_SERVER ?? null,
+      androidSdk: installed.MODULEX_ANDROID_SDK ?? null,
+      ...(dotnetRoot
+        ? {
+            dotnet: join(dotnetRoot, process.platform === 'win32' ? 'dotnet.exe' : 'dotnet'),
+            env: { DOTNET_ROOT: dotnetRoot, PATH: `${dotnetRoot}${delimiter}${process.env.PATH ?? ''}` },
+          }
+        : {}),
+      ...opts.pipeline,
+      godot,
+      projectsRoot,
+      addonsSource,
+    };
+  };
+  const initialHost = hostConfig();
+  let pipeline = initialHost ? createPipelineEngine(initialHost, { store, audit, redactor }) : null;
   // Phase 12: a run interrupted mid-stage (Core killed) continues on start, at its first incomplete stage/task.
   for (const p of pipeline?.resumeInterrupted() ?? [])
     p.catch((e: Error) => console.error(`[modulex-core] pipeline resume: ${e.message}`));
   // Phase 11/12: follow every build job that was not terminal when Core last stopped (never resubmits a new job).
   void buildJobs?.resume().catch((e: Error) => console.error(`[modulex-core] build job resume: ${e.message}`));
   const gateway = new Gateway({ audit, store, handlers, system, pipeline, budget });
+  /** After a Setup Assistant install: (re)build the engine so new components are used without restarting Core. */
+  const refreshPipeline = () => {
+    const host = hostConfig();
+    if (!host) return;
+    const busy = store.listProjects().some((p) => pipeline?.isRunning(p.project_id));
+    if (busy) return; // never swap an engine under a running pipeline; the next install or restart picks it up
+    pipeline = createPipelineEngine(host, { store, audit, redactor });
+    gateway.setPipeline(pipeline);
+  };
   const startedAt = Date.now();
   let port = 0;
 
@@ -255,6 +310,37 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
       if (req.method === 'GET' && url.pathname === '/audit') return send(res, 200, audit.list());
       if (req.method === 'GET' && url.pathname === '/audit/verify')
         return send(res, 200, { broken_at: audit.verify() });
+      if (url.pathname === '/setup' && req.method === 'GET') {
+        if (!setup) return send(res, 503, { status: 'BLOCKED', error: 'no data directory' });
+        const platforms =
+          system?.config.get<{ platforms: Platform[] }>('build_preferences').value.platforms ??
+          DEFAULT_CONFIG.build_preferences.platforms;
+        return send(res, 200, {
+          components: setup.status(),
+          plan: setup.plan(platforms as Platform[]),
+          progress: Object.fromEntries(setup.progress),
+          pipeline: { available: Boolean(pipeline), qaTier: pipeline?.qaTierAvailable ?? false },
+        });
+      }
+      if (url.pathname === '/setup/install' && req.method === 'POST') {
+        if (!setup) return send(res, 503, { status: 'BLOCKED', error: 'no data directory' });
+        const b = (await readJson(req)) as { component?: string; accept_android_license?: boolean };
+        const component = SETUP_COMPONENTS.find((c) => c.id === b.component)?.id;
+        if (!component) return send(res, 400, { error: 'unknown component' });
+        audit.append('setup_component_install', 'owner-ui', {
+          component,
+          accept_android_license: b.accept_android_license === true,
+        });
+        void setup.install(component, { acceptAndroidLicense: b.accept_android_license === true }).then((st) => {
+          audit.append('setup_component_install', 'system', { component, status: st.status });
+          if (st.status === 'installed') refreshPipeline();
+        });
+        return send(
+          res,
+          202,
+          setup.status().find((c) => c.id === component),
+        );
+      }
       if (url.pathname === '/build-workers' && req.method === 'GET')
         return send(res, 200, db ? listBuildWorkers(db) : []);
       if (url.pathname === '/build-workers/pair' && req.method === 'POST') {

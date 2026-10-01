@@ -30,6 +30,19 @@ namespace ModuleX.Studio.Common
         /// <summary>Cap for <c>game-node-find</c> / <c>game-ui-inspect</c> result sizes.</summary>
         public const int MaxResults = 200;
 
+        /// <summary>
+        /// The slowest frame rate a frame-bounded wait tolerates before it gives up. A windowed game on a software-
+        /// rendered CI runner (no GPU) measured below 6 fps (GATE 10, D-054), so the old 10 fps assumption timed out.
+        /// </summary>
+        public const double MinBudgetFps = 2.0;
+
+        /// <summary>
+        /// Wall-clock budget for <paramref name="frames"/> frames at <see cref="MinBudgetFps"/> plus slack, capped by
+        /// <paramref name="capSeconds"/> (default <see cref="MaxWaitSeconds"/>).
+        /// </summary>
+        public static double FrameBudgetSeconds(int frames, double slackSeconds, double capSeconds = MaxWaitSeconds)
+            => Math.Min(Math.Max(frames, 0) / MinBudgetFps + slackSeconds, capSeconds);
+
         /// <summary>Clamp input strength into Godot's [0, 1] action-strength range.</summary>
         public static float ClampStrength(float strength) => float.IsNaN(strength) ? 1f : Math.Clamp(strength, 0f, 1f);
 

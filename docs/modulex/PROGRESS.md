@@ -23,7 +23,8 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | 9 · QA runner + fix loop | **Done** (D-047, D-049, D-050) | GATE 9 live: clean game 10/10 scenarios; 2 injected bugs detected, fixed, regression green; an unfixable bug ends BLOCKED |
 | 11 · Remote build workers | **Done against a mock runner** (D-051). Pairing from the UI is BLOCKED until the credential store bridge exists (D-052). Live Mac: BLOCKED (no Mac). | GATE 11 mock suite 10/10 (stable 5×); the live macOS test reports BLOCKED |
 | 12 · Resumability, completion predicate, cost | **Done** (D-053) | GATE 12: kill at scene 17/30 → resumes at 17; kill mid-generation → 1 ComfyUI job; kill mid-build → 1 worker job; predicate tested over all 131,072 missing-evidence combinations |
-| 13–15 | Not started. | — |
+| 13 · Desktop app, Setup Assistant, installer, updates | **In progress.** Setup Assistant done (D-055); the installers exist. Production UI, credential store bridge, updater and code signing are open. | Setup Assistant: 7 mirror tests; live official sources (Godot + server on Linux; Windows CI adds .NET + Git) |
+| 14–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
