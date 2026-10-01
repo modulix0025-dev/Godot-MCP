@@ -978,3 +978,41 @@ really runs.
   and `godot --version` = `4.5.1.stable.mono.official.f62fdbde1` from the installed copy.
 - `.NET` is refused by this environment's egress proxy (`builds.dotnet.microsoft.com` 403). The Windows CI job runs
   the live test with `godot-mono,mcp-server,dotnet-sdk,git`.
+
+## D-056 · The credential store bridge over the sidecar's stdio (DECIDED, built; supersedes the BLOCKED part of D-052)
+
+Core never touches Credential Manager directly. The Tauri shell does, through `keyring` (DPAPI, per user).
+
+**Protocol.**
+
+- **Request.** Core writes one line to its stdout:
+  `{"type":"vault-request","id":n,"op":"set|get|delete","ref":"secret://a/b/c","value"?}`.
+- **Response.** The shell answers on Core's stdin: `{"type":"vault-response","id":n,"ok",…}`.
+- **Pipe.** The pipe is private to the parent/child pair. The shell ignores every other stdout line, and never
+  echoes or logs any of them.
+
+**Shell** (`src-tauri/src/vault.rs`).
+
+- **Accepted refs.** Only `secret://<seg>/<seg>/<seg>` (lowercase, digits and `-`, up to 64 characters each). It
+  maps to the entry `vault/<path>` under the "ModuleX Game Studio" service.
+- **Non-Windows.** It answers `ok=false` ("no credential store on this OS").
+- **Reading Core's stdout.** One thread now reads Core's stdout for its whole lifetime, starting with the
+  handshake. This also removes a latent bug: after the handshake nothing read Core's stdout, so a full pipe could
+  have blocked Core.
+
+**Core** (`audit/stdio-vault.ts`).
+
+- **Bridge.** `StdioVault` is enabled only when the shell sets `MODULEX_VAULT_BRIDGE=1`.
+- **Stored values.** They are registered with the redactor.
+- **A refused or unanswered request.** It throws, or times out, and never falls back to another store.
+- **Pairing.** `/build-workers/pair` therefore works in the app. The worker token lives only in Credential
+  Manager, and `studio.db` holds the handle.
+- **Self-test.** The owner endpoint `POST /vault/selftest` stores, reads back and deletes a random probe.
+
+**Evidence.**
+
+- Rust unit tests: ref mapping, and non-requests ignored.
+- Core: 3 tests with a fake shell that implements the same protocol: round-trip, refusal without a fallback, a
+  timeout, and pairing through the bridge with the token only in the store.
+- `--selftest` calls `/vault/selftest`, and **Windows CI requires `vault_ok == true`** for both installers. That
+  is a real Credential Manager round-trip on `windows-latest`.

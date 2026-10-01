@@ -27,6 +27,24 @@ pub fn set(name: &str, value: &str) -> Result<(), String> {
         .map_err(|e| format!("credential store: {e}"))
 }
 
+#[cfg(windows)]
+pub fn delete(name: &str) -> Result<(), String> {
+    match keyring::Entry::new(SERVICE, name).and_then(|e| e.delete_credential()) {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("credential store: {e}")),
+    }
+}
+
+/// Whether a persistent credential store exists on this OS (Windows Credential Manager).
+pub fn available() -> bool {
+    cfg!(windows)
+}
+
+#[cfg(not(windows))]
+pub fn delete(_name: &str) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(not(windows))]
 pub fn get(_name: &str) -> Option<String> {
     None

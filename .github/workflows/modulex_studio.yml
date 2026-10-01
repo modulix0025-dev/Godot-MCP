@@ -155,8 +155,11 @@ jobs:
           Get-Content $report
           if ($t.ExitCode -ne 0) { throw "self-test failed (exit $($t.ExitCode))" }
           # The small installer bundles no engine: Core must honestly report the pipeline as unavailable.
-          $h = (Get-Content $report -Raw | ConvertFrom-Json).health_body
+          $r = Get-Content $report -Raw | ConvertFrom-Json
+          $h = $r.health_body
           if ($h.pipeline.available -ne $false) { throw "small installer: pipeline.available should be false (no Godot bundled)" }
+          # D-056: Core stored, read back and deleted a probe secret in Windows Credential Manager through the shell.
+          if ($r.vault_ok -ne $true) { throw "credential store bridge round-trip failed: $($r.vault_detail | ConvertTo-Json -Compress)" }
           Copy-Item $report modulex-selftest.json
           $uninstaller = Get-ChildItem $app.DirectoryName -Filter 'uninstall*.exe' | Select-Object -First 1
           if ($uninstaller) {
@@ -222,7 +225,9 @@ jobs:
           $t = Start-Process $app.FullName -ArgumentList '--selftest', $report -Wait -PassThru
           Get-Content $report
           if ($t.ExitCode -ne 0) { throw "full self-test failed (exit $($t.ExitCode))" }
-          $h = (Get-Content $report -Raw | ConvertFrom-Json).health_body
+          $r = Get-Content $report -Raw | ConvertFrom-Json
+          $h = $r.health_body
+          if ($r.vault_ok -ne $true) { throw "full installer: credential store bridge round-trip failed" }
           # MODULEX_GODOT + MODULEX_ADDONS_SOURCE + MODULEX_PROJECTS_ROOT resolved → the pipeline executes;
           # MODULEX_SERVER resolved → the scripted QA tier is wired.
           if ($h.pipeline.available -ne $true) { throw "full installer: Core reports the pipeline as unavailable (MODULEX_GODOT not resolved)" }

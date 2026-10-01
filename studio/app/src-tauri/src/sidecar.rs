@@ -63,12 +63,29 @@ pub fn spawn(node: &Path, core_script: &Path, timeout: Duration, env: &[(&str, S
         .spawn()
         .map_err(|e| format!("failed to start Studio Core ({}): {e}", node.display()))?;
     let stdout = child.stdout.take().ok_or("sidecar stdout unavailable")?;
+    let mut stdin = child.stdin.take().ok_or("sidecar stdin unavailable")?;
 
+    // One reader for Core's whole lifetime: the handshake line first, then credential store requests (vault.rs).
+    // Reading continuously also keeps Core's stdout pipe from filling up. The thread owns Core's stdin; when Core
+    // exits (or is killed by Drop) stdout closes, the thread ends and stdin is closed.
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
         let mut line = String::new();
-        let _ = BufReader::new(stdout).read_line(&mut line);
-        let _ = tx.send(line);
+        let _ = reader.read_line(&mut line);
+        let _ = tx.send(line.clone());
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            if let Some(resp) = crate::vault::handle_line(line.trim()) {
+                if writeln!(stdin, "{resp}").and_then(|_| stdin.flush()).is_err() {
+                    break;
+                }
+            }
+        }
     });
     let line = match rx.recv_timeout(timeout) {
         Ok(l) => l,
@@ -90,12 +107,23 @@ pub fn spawn(node: &Path, core_script: &Path, timeout: Duration, env: &[(&str, S
 
 /// Minimal authenticated GET against Core (std only; Core is loopback-only HTTP/1.1).
 pub fn core_get(hs: &Handshake, path: &str) -> Result<(u16, String), String> {
+    core_request(hs, "GET", path)
+}
+
+/// Minimal authenticated POST with an empty JSON body.
+pub fn core_post(hs: &Handshake, path: &str) -> Result<(u16, String), String> {
+    core_request(hs, "POST", path)
+}
+
+fn core_request(hs: &Handshake, method: &str, path: &str) -> Result<(u16, String), String> {
     let mut s = TcpStream::connect(("127.0.0.1", hs.port)).map_err(|e| e.to_string())?;
     s.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    let body = if method == "POST" { "{}" } else { "" };
     write!(
         s,
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
-        hs.token
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        hs.token,
+        body.len()
     )
     .map_err(|e| e.to_string())?;
     let mut buf = String::new();

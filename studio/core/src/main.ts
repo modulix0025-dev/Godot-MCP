@@ -20,12 +20,14 @@
 //   MODULEX_PROJECTS_ROOT           and MODULEX_ADDONS_SOURCE it enables the pipeline engine; unset → games are
 //   MODULEX_ADDONS_SOURCE           planned only (PIPELINE_ENGINE_UNAVAILABLE).
 //   MODULEX_ANDROID_SDK             Android SDK root; unset → Android builds report BLOCKED.
+//   MODULEX_VAULT_BRIDGE=1          the shell answers vault-request lines on stdin (Windows Credential Manager, D-056)
 //   MODULEX_SERVER                  verified gamedev-mcp-server binary; enables the QA tier (scripted playtest on
 //                                   its own playtest server + the fix loop). Unset → boot-only playtest
 //                                   (PARTIAL_SUCCESS, reason recorded).
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { StudioDb } from './db/database.js';
+import { StdioVault } from './audit/stdio-vault.js';
 import { startCore, type CoreOptions } from './server.js';
 import { STUDIO_REPO_GATES } from './evolution/test-runner.js';
 import type { SourceWorkspace } from './evolution/evolution-service.js';
@@ -53,9 +55,10 @@ const options: CoreOptions = {
   auditPath: dataDir ? join(dataDir, 'audit.jsonl') : undefined,
   storePath: dataDir ? join(dataDir, 'studio-store.json') : undefined,
   dataDir: dataDir || undefined,
-  // studio.db: build worker pairings (handles only) and jobs, so a restart resumes them. The writable credential
-  // store bridge (vault) is Phase 13: until then pairing reports BLOCKED (D-051).
+  // studio.db: build worker pairings (handles only) and jobs, so a restart resumes them.
   db: dataDir ? new StudioDb(join(dataDir, 'studio.db')) : null,
+  // The shell's Windows Credential Manager bridge over this process's stdio (D-056); without the shell, none.
+  vault: env.MODULEX_VAULT_BRIDGE === '1' ? new StdioVault(process.stdin, process.stdout) : null,
   // Known even before Godot is installed, so a Setup Assistant install can enable the pipeline without a restart.
   locations: {
     projectsRoot: env.MODULEX_PROJECTS_ROOT || undefined,

@@ -36,6 +36,7 @@ import { createStudioMcpServer } from './mcp/studio-mcp.js';
 import { createPipelineEngine, type PipelineHostConfig } from './pipeline/engine.js';
 import { BuildJobs, listBuildWorkers, pairBuildWorker, type WritableVault } from './build/build-workers.js';
 import type { StudioDb } from './db/database.js';
+import type { StdioVault } from './audit/stdio-vault.js';
 import { Budget, type BudgetCaps } from './cost/budget.js';
 import { defaultTemplatesDir, SetupAssistant, type SetupAssistantOptions } from './setup/assistant.js';
 
@@ -340,6 +341,11 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
           202,
           setup.status().find((c) => c.id === component),
         );
+      }
+      if (url.pathname === '/vault/selftest' && req.method === 'POST') {
+        if (!vault || !('selfTest' in vault))
+          return send(res, 503, { ok: false, status: 'BLOCKED', error: 'no credential store bridge in this Core' });
+        return send(res, 200, await (vault as StdioVault).selfTest());
       }
       if (url.pathname === '/build-workers' && req.method === 'GET')
         return send(res, 200, db ? listBuildWorkers(db) : []);

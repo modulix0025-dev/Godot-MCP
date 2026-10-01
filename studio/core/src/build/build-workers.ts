@@ -150,7 +150,7 @@ export interface BuildWorkerRecord {
 }
 
 export interface WritableVault extends SecretVault {
-  set(ref: string, value: string): void;
+  set(ref: string, value: string): void | Promise<void>;
 }
 
 export function tokenRefFor(workerId: string): string {
@@ -183,7 +183,7 @@ export async function pairBuildWorker(o: {
   const { worker_id, token } = (await r.json()) as { worker_id: string; token: string };
   o.redactor?.register(token);
   const token_ref = tokenRefFor(worker_id);
-  o.vault.set(token_ref, token);
+  await o.vault.set(token_ref, token);
   const client = new RemoteBuildWorkerClient(o.url, token, o.fetchImpl);
   const capabilities = await client.capabilities().catch(() => null);
   const now = new Date().toISOString();

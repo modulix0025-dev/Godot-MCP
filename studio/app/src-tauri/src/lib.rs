@@ -5,6 +5,7 @@
 // mode that measures cold start and memory without showing a window (Phase 0 spike 7, run in Windows CI).
 mod credentials;
 mod sidecar;
+mod vault;
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -96,6 +97,10 @@ struct SelfTestReport {
     shell_rss_bytes: u64,
     sidecar_rss_bytes: u64,
     platform: String,
+    /// Credential store bridge round-trip (store → read back → delete a probe secret through Core). Required on
+    /// Windows; null where the OS has no credential store here.
+    vault_ok: Option<bool>,
+    vault_detail: serde_json::Value,
 }
 
 /// `--selftest <out.json>`: resolve the bundled Node + Core exactly as the GUI does, handshake, call
@@ -113,6 +118,8 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
         shell_rss_bytes: 0,
         sidecar_rss_bytes: 0,
         platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+        vault_ok: None,
+        vault_detail: serde_json::Value::Null,
     };
     // The same bundled components the GUI passes (engine/, addons/), so the report proves what Core will run with:
     // the full installer must report `pipeline.available` and `pipeline.qaTier` in the health body.
@@ -124,7 +131,8 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from);
-    let env = bundled_env(&resources, home);
+    let mut env = bundled_env(&resources, home);
+    env.push(("MODULEX_VAULT_BRIDGE", "1".to_string()));
     match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT, &env) {
         Ok(sc) => {
             report.shell_to_handshake_ms = started.elapsed().as_millis();
@@ -137,11 +145,24 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
                 }
                 Err(e) => report.error = Some(format!("health: {e}")),
             }
+            match sidecar::core_post(&sc.handshake, "/vault/selftest") {
+                Ok((status, body)) => {
+                    let v: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+                    report.vault_ok = if credentials::available() {
+                        Some(status == 200 && v.get("ok").and_then(|x| x.as_bool()) == Some(true))
+                    } else {
+                        None
+                    };
+                    report.vault_detail = v;
+                }
+                Err(e) => report.vault_detail = serde_json::Value::String(format!("vault selftest: {e}")),
+            }
             report.shell_rss_bytes = rss_bytes(&mut sys, std::process::id());
             report.sidecar_rss_bytes = rss_bytes(&mut sys, sc.child.id());
             report.ok = report.health_status == 200
                 && report.error.is_none()
-                && report.health_body.get("ok").and_then(|v| v.as_bool()) == Some(true);
+                && report.health_body.get("ok").and_then(|v| v.as_bool()) == Some(true)
+                && report.vault_ok != Some(false);
             drop(sc);
         }
         Err(e) => report.error = Some(e),
@@ -195,6 +216,8 @@ pub fn run() {
             let node = sidecar::node_path(&exe_dir());
             // Stable credentials from Windows Credential Manager; Core generates them on the first launch.
             let mut env = credentials::core_env();
+            // Core may store/resolve secrets at runtime through the shell (vault.rs), e.g. build worker tokens.
+            env.push(("MODULEX_VAULT_BRIDGE", "1".to_string()));
             // %LOCALAPPDATA%\ModuleXGameStudio: audit log, store, config versions, extensions, evolution
             // sandboxes and the install state that drives rollback and Safe Mode.
             if let Ok(dir) = app.path().app_local_data_dir() {
