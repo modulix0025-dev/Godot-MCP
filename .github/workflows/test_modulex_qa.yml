@@ -131,6 +131,17 @@ jobs:
           grep -q "live import: exercised" ../../gate8.log
           grep -q "luminance variance" ../../gate8.log
 
+      - name: GATE 9 — QA runner, injected bugs and the fix loop (windowed under Xvfb)
+        env:
+          MODULEX_LIVE_SERVER: ${{ steps.server.outputs.bin }}
+        run: |
+          set -euo pipefail
+          export MODULEX_LIVE_GODOT="$(readlink -f "$(command -v godot)")"
+          cd studio/core
+          xvfb-run -a -s "-screen 0 1600x1000x24" npx vitest run --reporter=verbose tests/live-qa.test.ts tests/qa.test.ts 2>&1 | tee ../../gate9.log
+          # The live suite must actually have run (never a silent skip in this job).
+          grep -q "unfixable bug BLOCKED: exercised" ../../gate9.log
+
       - name: Upload harness evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -146,6 +157,7 @@ jobs:
             build.log
             gate4.log
             gate8.log
+            gate9.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -208,5 +220,96 @@ jobs:
           path: |
             gate6.log
             gate6-games/space-kid-journey/build-output/0.1.0/logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows-smoke:
+    # GATE 10 on a real Windows host: SAMPLE_GAME_SPEC → project → Windows QA + RELEASE exports, then the QA build
+    # runs every default scenario through its in-game QA runtime and the RELEASE build (no MCP inside) must stay
+    # alive for 10 s. Windowed first; a runner with no usable display/GPU falls back to MODULEX_SMOKE_HEADLESS=1,
+    # and the log says so explicitly.
+    name: Windows smoke — exported QA + RELEASE builds (Godot 4.5.1 mono)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GODOT_VERSION: "4.5.1"
+      # Must equal ServerVersion in addons/godot_mcp/Runtime/Connection/GodotMcpServerView.cs.
+      SERVER_VERSION: "9.2.9"
+      SERVER_ASSET: gamedev-mcp-server-win-x64.zip
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup Godot ${{ env.GODOT_VERSION }} (mono, with export templates)
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: true
+          include-templates: true
+
+      - name: Report Godot version
+        run: godot --version --headless
+
+      - name: Download + verify gamedev-mcp-server win-x64 (SHA256SUMS, fail-closed)
+        id: server
+        run: |
+          set -euo pipefail
+          base="https://github.com/IvanMurzak/GameDev-MCP-Server/releases/download/v${SERVER_VERSION}"
+          mkdir -p server
+          curl -fsSL -o "server/${SERVER_ASSET}" "${base}/${SERVER_ASSET}"
+          curl -fsSL -o server/SHA256SUMS "${base}/SHA256SUMS"
+          (cd server && grep " ${SERVER_ASSET}\$" SHA256SUMS | sha256sum -c -)
+          unzip -o -q "server/${SERVER_ASSET}" -d server/bin
+          bin="$(find server/bin -type f -name gamedev-mcp-server.exe | head -n1)"
+          echo "bin=$(cygpath -w "$(pwd)/$bin")" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+
+      - name: Build the workspace
+        run: |
+          set -euo pipefail
+          (cd cli && npm ci && npm run build)
+          (cd studio && npm ci && npm run build -w @modulex/shared)
+
+      - name: GATE 10 — Windows export + smoke (windowed, headless fallback)
+        env:
+          MODULEX_LIVE_SERVER: ${{ steps.server.outputs.bin }}
+        run: |
+          set -uo pipefail
+          godot_bin="$(command -v godot)"
+          # setup-godot puts a shim on PATH; resolve the real .exe it points at.
+          real="$(find "$(dirname "$(readlink -f "$godot_bin")")" -maxdepth 3 -iname 'Godot_v*_mono_win64.exe' ! -iname '*console*' | head -n1)"
+          export MODULEX_LIVE_GODOT="$(cygpath -w "${real:-$godot_bin}")"
+          echo "MODULEX_LIVE_GODOT=${MODULEX_LIVE_GODOT}"
+          export MODULEX_LIVE_PROJECTS_ROOT="$(cygpath -w "$(pwd)/gate10-games")"
+          mkdir -p gate10-games
+          cd studio/core
+          npx vitest run --reporter=verbose tests/live-windows-smoke.test.ts 2>&1 | tee ../../gate10.log
+          if grep -q "Windows QA + RELEASE smoke: exercised" ../../gate10.log; then exit 0; fi
+          echo "::warning::GATE 10 windowed run failed on this runner; retrying with MODULEX_SMOKE_HEADLESS=1 (no window verified)."
+          echo "[gate10] windowed run FAILED on the runner; retrying headless (MODULEX_SMOKE_HEADLESS=1)" | tee -a ../../gate10.log
+          rm -rf ../../gate10-games && mkdir -p ../../gate10-games
+          MODULEX_SMOKE_HEADLESS=1 npx vitest run --reporter=verbose tests/live-windows-smoke.test.ts 2>&1 | tee -a ../../gate10.log
+          grep -q "Windows QA + RELEASE smoke: exercised" ../../gate10.log
+
+      - name: Upload GATE 10 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-smoke-evidence
+          path: |
+            gate10.log
+            gate10-games/space-kid-journey/build-output/0.1.0/logs/
           if-no-files-found: ignore
           retention-days: 7

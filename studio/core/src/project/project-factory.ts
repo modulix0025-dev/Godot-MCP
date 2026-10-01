@@ -55,7 +55,9 @@ export function godotErrors(log: string): string[] {
         t,
       )
     )
-      out.push(t);
+      // Keep the GDScript frame ("at: _ready (res://scripts/bonus.gd:5)") with the error: it is what attributes the
+      // failure to a file (topFrame), so the fix loop can name — and the generator fixer restore — the right script.
+      out.push(/^at:/.test(next) && /res:\/\//.test(next) ? `${t} ${next}` : t);
     // Engine-internal editor noise in headless runs (dialog parenting, EditorSettings lookups) has no project
     // location; a genuine project error names a res:// file on the line or its "at:" continuation.
     else if (/^ERROR\b/.test(t) && /res:\/\//.test(`${t} ${next}`)) out.push(`${t} ${next}`);

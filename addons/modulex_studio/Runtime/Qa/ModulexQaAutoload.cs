@@ -9,6 +9,7 @@
 */
 #nullable enable
 using System;
+using com.IvanMurzak.Godot.MCP.MainThreadDispatch;
 using com.IvanMurzak.Godot.MCP.Runtime;
 using com.IvanMurzak.Godot.MCP.Tools;
 using Godot;
@@ -43,6 +44,9 @@ namespace ModuleX.Studio.Qa
         /// <summary>The explicit tool set a playtest exposes (reflection and console excluded on purpose).</summary>
         public static readonly Type[] QaToolTypes = { typeof(Tool_Game), typeof(Tool_Ping), typeof(Tool_RuntimeErrors) };
 
+        /// <summary>Name of the pause-proof main-thread dispatcher this autoload owns (see <see cref="_Ready"/>).</summary>
+        public const string DispatcherNodeName = "ModulexQaMainThreadDispatcher";
+
         GodotMcpRuntimeHandle? _handle;
 
         public override async void _Ready()
@@ -55,6 +59,15 @@ namespace ModuleX.Studio.Qa
 
             // Keep processing while the game is paused so waits/state/screenshots still work.
             ProcessMode = ProcessModeEnum.Always;
+
+            // Every QA tool call marshals onto the main thread through the MainThreadDispatcher queue, which is
+            // drained from Node._Process. The runtime's own dispatcher sits under the tree root with the default
+            // (Inherit -> Pausable) mode, so once a scenario pauses the game the queue stops draining and every
+            // call hangs (GATE 9 'pause-resume', D-049). Install the dispatcher here first, as a child of this
+            // Always-processing autoload: AddChild enters the tree synchronously, so GodotMcpRuntime sees a live
+            // Instance and skips its own. No change to addons/godot_mcp is needed.
+            if (MainThreadDispatcher.Instance == null)
+                AddChild(new MainThreadDispatcher { Name = DispatcherNodeName, ProcessMode = ProcessModeEnum.Always });
 
             try
             {

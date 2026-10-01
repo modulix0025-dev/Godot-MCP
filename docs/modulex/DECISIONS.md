@@ -741,3 +741,68 @@ Deviations:
   - Headless: PARTIAL_SUCCESS, because the thumbnail cannot render without a GPU. This is stated, not hidden.
   - Windowed under Xvfb: SUCCESS, with the thumbnail and a MeshInstance3D.
 - A malformed GLB never reaches `res://`, and no editor call is made for it.
+
+## D-047 · Generator restore stands in for the unavailable agent fixer (DECIDED, built)
+
+The Phase 9 fix loop needs a fixer. The ModuleX Agent is not reachable (D-030), so the loop's only automatic
+fixer is **generator restore** (`core/src/qa/fixers.ts`). Every generated file has a known-good version: the
+deterministic generator's output (D-043).
+
+- A failure that points at a generated file is fixed by restoring that file. The file can be named directly (the
+  top frame) or through a reference to a missing resource, and it must have drifted from the generator.
+- A failure in a file the generator does not own cannot be fixed this way. The loop ends **BLOCKED**, naming the
+  file and suggesting an action.
+- The limits are unchanged: 3 attempts per fingerprint, 8 per run, 30 minutes. A checkpoint is taken before
+  every attempt, and a regression restores it.
+
+When the agent connects, it becomes a second `Fixer`, tried after generator restore. The loop does not change.
+
+## D-048 · Generated projects ship a nuget.config without a local feed (DECIDED, built)
+
+Every generated project gets a `nuget.config` that clears inherited sources and lists nuget.org only. A machine-wide
+`NuGet.Config` with a dead private feed therefore cannot break `dotnet restore` of a game.
+
+The plan also asks for an offline-capable local feed, holding the pinned ReflectorNet 5.4.1, McpPlugin 8.6.0 and
+GodotSharp packages. That feed is **not** in the template: its path is only known on the owner's machine. The Setup
+Assistant (Phase 13) will create it and add it to the project's `nuget.config` as a second source.
+
+## D-049 · The QA runtime owns a pause-proof main-thread dispatcher (DECIDED, built)
+
+**Finding (GATE 9).** `pause-resume` timed out. After `get_tree().paused = true`, every in-game QA tool call stopped
+answering. Each call marshals onto the main thread through the `MainThreadDispatcher` queue, which drains in
+`Node._Process`. The runtime adds its dispatcher under the tree root with the default process mode
+(Inherit → Pausable). A paused tree therefore never drains the queue.
+
+**Fix.** The fix is in `addons/modulex_studio` only, with **zero diff in `addons/godot_mcp`**.
+
+1. Before `GodotMcpRuntime.Initialize(...).Build()`, `ModulexQaAutoload._Ready` adds its own
+   `MainThreadDispatcher` as a child, with `ProcessMode = Always`. The autoload already runs with `Always`.
+2. `AddChild` enters the tree synchronously, so `MainThreadDispatcher.Instance` is set.
+3. `GodotMcpRuntime.EnsureMainThreadDispatcher` then takes its documented "already pumped" path and adds nothing.
+
+`Engine.GetProcessFrames()` keeps counting while the tree is paused, so frame-bounded waits still finish.
+
+**Evidence.** GATE 9: `scenario pause-resume: passed (7/7 steps)`. Before the fix, 7 of 8 scenarios passed.
+
+## D-050 · The QA tier is wired into the pipeline when MODULEX_SERVER is set (DECIDED, built)
+
+`createPipelineEngine` builds a `QaTier` when `PipelineHostConfig.serverBinary` is set. `main.ts` sets it from
+`MODULEX_SERVER`, which the shell sets only when the bundled server exists. The tier consists of `QaRunner` (static
+tier plus a scripted playtest on the project's own playtest server) and the `FixLoop` with generator restore.
+
+- **playtest.** The default scenarios are written to `.modulex/tests/` if none exist.
+  - No failures: SUCCESS.
+  - Failures: PARTIAL_SUCCESS with "N QA failure(s) found; handed to bug_fixes".
+  - A playtest that could not run: FAILED.
+- **bug_fixes.** Runs the fix loop. All fixed: SUCCESS. Otherwise BLOCKED, with the loop's summary. After a Core
+  restart, the loop re-runs the suite itself.
+- **Without `MODULEX_SERVER`.** The stage stays a boot-only PARTIAL_SUCCESS, and its reason says the scripted
+  scenarios did not run.
+- **`/health`.** It reports `pipeline: { available, qaTier }`: capabilities only, never paths.
+- **`--selftest`.** The shell now passes the same `bundled_env` as the GUI. CI asserts:
+  - the small installer reports `available=false`;
+  - the full installer reports `available=true` and `qaTier=true`.
+
+**Failure attribution.** `godotErrors` now keeps the GDScript `at: … (res://…:N)` frame on a `SCRIPT ERROR`
+line. Without the frame, a headless scene-run failure had no file. The fix loop then logged "names no file",
+spent its attempts, and could not name the unfixable script in its BLOCKED summary.

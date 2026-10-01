@@ -121,7 +121,7 @@ export class FixLoop {
       if (!target) {
         const f = actionable[0]!;
         return blocked(
-          `could not fix ${f.class} after ${limits.perFingerprint} attempts: ${f.message}${f.file ? ` (${f.file}${f.line ? `:${f.line}` : ''})` : ''}`,
+          `could not fix ${f.class} after ${limits.perFingerprint} attempts: ${f.message}${f.file && !f.message.includes(f.file) ? ` (${f.file}${f.line ? `:${f.line}` : ''})` : ''}`,
           `Fix ${f.file ?? 'the failing code'} manually or ask the ModuleX Agent with the evidence, then resume the pipeline.`,
         );
       }

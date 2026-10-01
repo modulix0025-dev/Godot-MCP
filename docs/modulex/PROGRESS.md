@@ -4,7 +4,8 @@ This file follows the execution prompt's working protocol. For every phase it re
 **real** gate output, deviations and open risks. The evidence behind each decision is in
 [`DECISIONS.md`](DECISIONS.md).
 
-All work is on branch `claude/practical-hawking-whz0fm`.
+All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from Phase 9 continues on
+`claude/nifty-allen-ipdy0k`, which was cut from it.
 
 | Phase | Status | Gate |
 |---|---|---|
@@ -16,10 +17,11 @@ All work is on branch `claude/practical-hawking-whz0fm`.
 | Execution Patch 2 · System Evolution | **Done up to the phase boundaries** (see below) | green (below) |
 | 4 · Core foundation | **Done** | GATE 4 live suite 6/6 against a real Godot 4.5.1 editor (locally and in CI) |
 | 5–6 · Gateway + pipeline engine | **Done.** Playtest, visual and optimization stages report PARTIAL_SUCCESS until Phase 9. | GATE 6 live: spec → exported builds (locally and in CI job `studio-pipeline`) |
-| 10 · Template + Build Service | **Windows, iOS-prep and Android-BLOCKED paths done.** Smoke on a Windows host is still open. | same GATE 6 run |
+| 10 · Template + Build Service | **Windows, iOS-prep and Android-BLOCKED paths done.** The Windows-host smoke runs in CI job `windows-smoke`. | GATE 6 run; GATE 10 (`windows-smoke`, see below) |
 | 7 · ComfyUI workers + jobs | **Done against the mock.** The live worker test is BLOCKED: no GPU worker (D-045). | GATE 7 mock suite 18/18; the live test reports BLOCKED |
 | 8 · Asset factory + Godot import | **Done** (D-046) | GATE 8: 14 fixture tests; live import into a real editor (a thumbnail under Xvfb) |
-| 9, 11–15 | Not started. | — |
+| 9 · QA runner + fix loop | **Done** (D-047, D-049, D-050) | GATE 9 live: clean game 10/10 scenarios; 2 injected bugs detected, fixed, regression green; an unfixable bug ends BLOCKED |
+| 11–15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -322,6 +324,59 @@ CI job `studio-pipeline` runs the same gate. It uploads the Windows RELEASE buil
   → validate_resources → instance → scene_tree: MeshInstance3D → thumbnail: 2859-byte PNG, variance 6080.8
   ```
 - CI runs the same test in the QA workflow (step "GATE 8").
+
+## Phase 9: QA runner, fix loop and the QA tier in the pipeline
+
+- **QA runner** (`core/src/qa/`). It has two tiers:
+  - Static: `dotnet build` errors, every scene run headless, and the editor's `script-validate` /
+    `project-validate-resources`.
+  - Scripted playtest: the default scenarios, plus any in `.modulex/tests/*.json`, through the in-game QA runtime
+    on the project's own playtest server.
+
+  Failures are classified and fingerprinted, then recorded in `studio.db`.
+- **Fix loop.** A checkpoint before every attempt, generator restore as the fixer (D-047), a restore on regression,
+  and the limits 3 per fingerprint / 8 per run / 30 minutes.
+- **The `pause-resume` hang** is fixed in `addons/modulex_studio` only, with zero diff in `addons/godot_mcp` (D-049).
+- **Failure attribution.** A `SCRIPT ERROR` keeps its `at: (res://…:N)` frame (D-050). The fix loop now fixes
+  `player.gd` on the first attempt, and the BLOCKED summary names `bonus.gd`.
+- **Pipeline.** With `MODULEX_SERVER` set:
+  - `playtest` runs the QA tier, and `bug_fixes` runs the fix loop.
+  - `/health` reports `pipeline: { available, qaTier }`.
+  - The shell's `--selftest` passes the bundled env.
+  - CI asserts that the small installer reports `available=false` and the full installer reports `available=true`
+    and `qaTier=true` (D-050).
+
+**GATE 9** (`core/tests/live-qa.test.ts`, Godot 4.5.1 mono plus gamedev-mcp-server 9.2.9 under Xvfb, 273 s).
+CI runs the same test in the QA workflow, step "GATE 9".
+
+```
+[gate9] clean: 0 failure(s)        boot, hud, interact-and-jump, level-2, lose, no-fall-through,
+                                   pause-resume (7/7), player-moves, save-load, win: passed
+[gate9] injected: 4 failure(s)
+  missing_resource  res://textures/missing_ground.png — Resource file not found (expected type: Texture2D)
+  runtime_exception res://scripts/player.gd:33 — Invalid call. Nonexistent function 'explode' in base 'Nil'.
+[gate9] fix missing_resource #1 (mx-cp-3): fixed — restored res://scenes/level_1.tscn from the generator
+[gate9] fix runtime_exception #1 (mx-cp-4): fixed — restored res://scripts/player.gd from the generator
+[gate9] fix loop: SUCCESS — all tests pass after 2 fix(es)
+[gate9] after fixes (full regression): 0 failure(s)     (all 10 scenarios passed)
+[gate9] unfixable: BLOCKED — could not fix runtime_exception after 3 attempts: SCRIPT ERROR: Invalid call.
+        Nonexistent function 'spin' in base 'Nil'. at: _ready (res://scripts/bonus.gd:5)
+        → Fix res://scripts/bonus.gd manually or ask the ModuleX Agent with the evidence, then resume the pipeline.
+ ✓ GATE 9 — QA runner, injected bugs and the fix loop  272894ms
+```
+
+## Phase 10: Windows-host smoke (GATE 10)
+
+CI job `windows-smoke` (`.github/workflows/test_modulex_qa.yml`, `windows-latest`) runs these steps:
+
+1. Set up Godot 4.5.1 mono with export templates.
+2. Download the win-x64 gamedev-mcp-server 9.2.9 and verify it against SHA256SUMS (fail-closed).
+3. Run `tests/live-windows-smoke.test.ts`.
+
+The test exports the sample game as Windows QA and RELEASE builds. The QA exe must pass every default scenario
+through its in-game runtime. The RELEASE exe, which has no MCP inside, must stay alive for 10 s. If the windowed run
+fails on the runner, the job retries with `MODULEX_SMOKE_HEADLESS=1`, and both the log and a workflow warning say so.
+The result of the first CI run is recorded below once it exists.
 
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 

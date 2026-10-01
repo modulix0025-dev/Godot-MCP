@@ -20,6 +20,9 @@
 //   MODULEX_PROJECTS_ROOT           and MODULEX_ADDONS_SOURCE it enables the pipeline engine; unset → games are
 //   MODULEX_ADDONS_SOURCE           planned only (PIPELINE_ENGINE_UNAVAILABLE).
 //   MODULEX_ANDROID_SDK             Android SDK root; unset → Android builds report BLOCKED.
+//   MODULEX_SERVER                  verified gamedev-mcp-server binary; enables the QA tier (scripted playtest on
+//                                   its own playtest server + the fix loop). Unset → boot-only playtest
+//                                   (PARTIAL_SUCCESS, reason recorded).
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { startCore, type CoreOptions } from './server.js';
@@ -58,6 +61,7 @@ const options: CoreOptions = {
           projectsRoot: env.MODULEX_PROJECTS_ROOT,
           addonsSource: env.MODULEX_ADDONS_SOURCE,
           androidSdk: env.MODULEX_ANDROID_SDK || null,
+          serverBinary: env.MODULEX_SERVER || null,
         }
       : undefined,
 };

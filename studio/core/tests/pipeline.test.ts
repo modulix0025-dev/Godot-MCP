@@ -13,7 +13,9 @@ import { Redactor } from '../src/audit/secrets.js';
 import { BuildService, buildRequirements } from '../src/build/build-service.js';
 import { Gateway } from '../src/gateway/gateway.js';
 import { createHandlers } from '../src/gateway/tool-handlers.js';
-import { chooseProfiles, PipelineEngine, type StageExecutor } from '../src/pipeline/engine.js';
+import { chooseProfiles, PipelineEngine, type QaTier, type StageExecutor } from '../src/pipeline/engine.js';
+import { makeFailure } from '../src/qa/failures.js';
+import type { SuiteReport } from '../src/qa/qa-runner.js';
 import { assemblyName, generateProject, physicalKeycode } from '../src/project/game-generator.js';
 import { godotErrors } from '../src/project/project-factory.js';
 import { StudioStore } from '../src/store/studio-store.js';
@@ -75,6 +77,7 @@ describe('godotErrors', () => {
     const e = godotErrors(log);
     expect(e).toHaveLength(2);
     expect(e[0]).toMatch(/Parse Error/);
+    expect(e[0]).toContain('(res://scripts/player.gd:12)');
     expect(e[1]).toMatch(/missing\.tscn/);
   });
 });
@@ -152,7 +155,12 @@ describe('build profiles', () => {
   });
 });
 
-function engineFor(store: StudioStore, executors: Partial<Record<PipelineStage, StageExecutor>>, calls: string[] = []) {
+function engineFor(
+  store: StudioStore,
+  executors: Partial<Record<PipelineStage, StageExecutor>>,
+  calls: string[] = [],
+  qa?: QaTier,
+) {
   const all: Partial<Record<PipelineStage, StageExecutor>> = {};
   for (const s of CREATION_PIPELINE)
     all[s] = async () => {
@@ -168,8 +176,24 @@ function engineFor(store: StudioStore, executors: Partial<Record<PipelineStage, 
     builds: { build: unused },
     runScene: unused,
     executors: { ...all, ...executors },
+    qa,
   });
 }
+
+/** Stages driven by the QA tier: their built-in executors run (the fakes for them are removed). */
+function withoutQaStages(store: StudioStore, qa: QaTier | undefined, calls: string[] = []): PipelineEngine {
+  const engine = engineFor(store, {}, calls, qa);
+  const o = (engine as unknown as { o: { executors: Partial<Record<PipelineStage, StageExecutor>> } }).o;
+  delete o.executors.playtest;
+  delete o.executors.bug_fixes;
+  return engine;
+}
+
+const report = (failures: SuiteReport['failures']): SuiteReport => ({
+  failures,
+  static: { build: [], scenes: [{ scene: 'res://scenes/main.tscn', ok: true }] },
+  playtest: [{ id: 'boot', status: failures.length ? 'failed' : 'passed', steps: [], failures, ms: 10 }],
+});
 
 describe('pipeline engine', () => {
   it('runs every non-planning stage once, in order', async () => {
@@ -299,5 +323,90 @@ describe('studio_game_create / studio_pipeline_resume', () => {
     ).toBe(true);
     const res = await gateway.call('studio_pipeline_resume', { project_id: id }, { caller: 'claude-desktop' });
     expect(res).toMatchObject({ status: 'SUCCESS', data: { executing: false, resumed_from: null } });
+  });
+});
+
+describe('QA tier in the pipeline (Phase 9, MODULEX_SERVER)', () => {
+  const bug = makeFailure(
+    'runtime_exception',
+    'Attempt to call function on a null instance',
+    'scenario boot',
+    'res://scripts/player.gd',
+    12,
+  );
+
+  it('a clean suite makes playtest SUCCESS and bug_fixes has nothing to do', async () => {
+    const store = new StudioStore();
+    store.upsertFromSpec(spec());
+    const id = SAMPLE_GAME_SPEC.project.id;
+    let fixes = 0;
+    const engine = withoutQaStages(store, {
+      suite: async () => report([]),
+      fix: async () => {
+        fixes++;
+        throw new Error('not expected');
+      },
+    });
+    expect(engine.qaTierAvailable).toBe(true);
+    engine.start(id);
+    const run = await engine.execute(id);
+    const pt = run.stages.find((s) => s.stage === 'playtest')!;
+    expect(pt.status).toBe('SUCCESS');
+    expect(pt.evidence.join('\n')).toMatch(/scenario boot: passed/);
+    expect(run.stages.find((s) => s.stage === 'bug_fixes')!.status).toBe('SUCCESS');
+    expect(fixes).toBe(0);
+  });
+
+  it('failures go to the fix loop: fixed → SUCCESS; unfixable → BLOCKED with the summary', async () => {
+    for (const outcome of ['SUCCESS', 'BLOCKED'] as const) {
+      const store = new StudioStore();
+      store.upsertFromSpec(spec());
+      const id = SAMPLE_GAME_SPEC.project.id;
+      const seen: unknown[] = [];
+      const engine = withoutQaStages(store, {
+        suite: async () => report([bug]),
+        fix: async (_c, initial) => {
+          seen.push(initial);
+          return {
+            status: outcome,
+            attempts: [],
+            remaining: outcome === 'SUCCESS' ? [] : [bug],
+            summary: outcome === 'SUCCESS' ? 'all fixed' : 'res://scripts/bonus.gd is not generator-owned',
+          };
+        },
+      });
+      engine.start(id);
+      const run = await engine.execute(id);
+      const pt = run.stages.find((s) => s.stage === 'playtest')!;
+      expect(pt.status).toBe('PARTIAL_SUCCESS');
+      expect(pt.reason).toMatch(/1 QA failure\(s\) found/);
+      expect(seen).toEqual([[bug]]);
+      const bf = run.stages.find((s) => s.stage === 'bug_fixes')!;
+      expect(bf.status).toBe(outcome);
+      if (outcome === 'BLOCKED') {
+        expect(bf.reason).toMatch(/bonus\.gd/);
+        expect(run.stages.find((s) => s.stage === 'regression')!.status).toBe('PENDING');
+      }
+    }
+  });
+
+  it('a playtest that could not run is FAILED, never SUCCESS', async () => {
+    const store = new StudioStore();
+    store.upsertFromSpec(spec());
+    const id = SAMPLE_GAME_SPEC.project.id;
+    const engine = withoutQaStages(store, {
+      suite: async () => ({ ...report([]), playtest: null }),
+      fix: async () => {
+        throw new Error('not expected');
+      },
+    });
+    engine.start(id);
+    const run = await engine.execute(id);
+    expect(run.stages.find((s) => s.stage === 'playtest')).toMatchObject({ status: 'FAILED' });
+  });
+
+  it('without MODULEX_SERVER the engine reports no QA tier', () => {
+    const engine = withoutQaStages(new StudioStore(), undefined);
+    expect(engine.qaTierAvailable).toBe(false);
   });
 });

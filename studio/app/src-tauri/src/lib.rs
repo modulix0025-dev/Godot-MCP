@@ -114,7 +114,18 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
         sidecar_rss_bytes: 0,
         platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
     };
-    match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT, &[]) {
+    // The same bundled components the GUI passes (engine/, addons/), so the report proves what Core will run with:
+    // the full installer must report `pipeline.available` and `pipeline.qaTier` in the health body.
+    let resources = core_script
+        .parent()
+        .and_then(|core| core.parent())
+        .map(|d| d.to_path_buf())
+        .unwrap_or_else(exe_dir);
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from);
+    let env = bundled_env(&resources, home);
+    match sidecar::spawn(&node, &core_script, HANDSHAKE_TIMEOUT, &env) {
         Ok(sc) => {
             report.shell_to_handshake_ms = started.elapsed().as_millis();
             report.sidecar_handshake_ms = sc.handshake_ms;

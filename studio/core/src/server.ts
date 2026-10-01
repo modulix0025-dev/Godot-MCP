@@ -116,7 +116,7 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
         forceSafeMode: opts.forceSafeMode,
       })
     : null;
-  const pipeline = opts.pipeline ? createPipelineEngine(opts.pipeline, { store, audit }) : null;
+  const pipeline = opts.pipeline ? createPipelineEngine(opts.pipeline, { store, audit, redactor }) : null;
   const gateway = new Gateway({ audit, store, handlers, system, pipeline });
   const startedAt = Date.now();
   let port = 0;
@@ -172,6 +172,8 @@ export async function startCore(opts: CoreOptions = {}): Promise<CoreServer> {
           uptimeMs: Date.now() - startedAt,
           rssBytes: process.memoryUsage().rss,
           godotCli: GODOT_CLI_EXPORTS,
+          // Capabilities only (never paths): whether studio_game_create executes, and whether the QA tier runs.
+          pipeline: { available: Boolean(pipeline), qaTier: pipeline?.qaTierAvailable ?? false },
           principal: who,
         });
       }

@@ -24,11 +24,19 @@ import {
   type OutcomeStatus,
   type PipelineStage,
 } from '@modulex/shared';
-import type { AuditLog } from '../audit/audit-log.js';
+import { AuditLog } from '../audit/audit-log.js';
+import { Redactor } from '../audit/secrets.js';
+import { ProjectCheckpoints } from '../checkpoints/project-checkpoints.js';
 import { BuildService, type BuildRequest, type BuildResult, type Platform } from '../build/build-service.js';
 import type { StudioDb } from '../db/database.js';
 import { generateProject, type GeneratedProject } from '../project/game-generator.js';
 import { ProjectFactory } from '../project/project-factory.js';
+import type { QaFailure } from '../qa/failures.js';
+import { FixLoop, type FixLoopResult } from '../qa/fix-loop.js';
+import { GeneratorRestoreFixer } from '../qa/fixers.js';
+import { PlaytestSession } from '../qa/playtest.js';
+import { loadScenarios, QaRunner, writeScenarios, type SuiteReport } from '../qa/qa-runner.js';
+import { defaultScenarios } from '../qa/scenarios.js';
 import { runScene, type SceneRun } from '../qa/scene-runner.js';
 import type { PipelineRun, ProjectRecord, StudioStore } from '../store/studio-store.js';
 
@@ -52,6 +60,16 @@ export interface StageContext {
 
 export type StageExecutor = (ctx: StageContext) => Promise<StageOutcome>;
 
+/**
+ * The Phase 9 QA tier: the full suite (static tier + scripted playtest through the in-game QA runtime on its own
+ * playtest server) and the bounded fix loop. Wired only when a gamedev-mcp-server binary is configured
+ * (MODULEX_SERVER); without it the playtest stage stays a boot-only PARTIAL_SUCCESS that says so.
+ */
+export interface QaTier {
+  suite(c: StageContext): Promise<SuiteReport>;
+  fix(c: StageContext, initial?: QaFailure[]): Promise<FixLoopResult>;
+}
+
 export interface PipelineEngineOptions {
   store: StudioStore;
   audit?: AuditLog | null;
@@ -60,6 +78,8 @@ export interface PipelineEngineOptions {
   runScene: (projectDir: string, scene: string, frames?: number) => Promise<SceneRun>;
   /** Override individual stages (tests; later phases plug in the playtest / visual tiers). */
   executors?: Partial<Record<PipelineStage, StageExecutor>>;
+  /** The QA tier (null/undefined = boot-only playtest; the reason is recorded). */
+  qa?: QaTier | null;
   version?: string;
 }
 
@@ -91,12 +111,19 @@ function summarise(r: BuildResult): string {
 
 export class PipelineEngine {
   private readonly running = new Map<string, Promise<PipelineRun>>();
+  /** Failures the playtest stage found in this process, handed to bug_fixes (re-derived by the loop on resume). */
+  private readonly pendingFailures = new Map<string, QaFailure[]>();
 
   constructor(private readonly o: PipelineEngineOptions) {}
 
   /** Create a fresh run for a project with the planning stages done; does not execute. */
   start(projectId: string): PipelineRun {
     return this.o.store.createRun(projectId, null);
+  }
+
+  /** True when the scripted QA tier (playtest server + fix loop) is wired. */
+  get qaTierAvailable(): boolean {
+    return Boolean(this.o.qa);
   }
 
   isRunning(projectId: string): boolean {
@@ -359,23 +386,60 @@ export class PipelineEngine {
   }
 
   private async playtest(c: StageContext): Promise<StageOutcome> {
-    const r = await this.runAll(c, [c.generated.mainScene], 900, 'playtest');
-    if (!isDone(r.status)) return r;
+    const qa = this.o.qa;
+    if (!qa) {
+      const r = await this.runAll(c, [c.generated.mainScene], 900, 'playtest');
+      if (!isDone(r.status)) return r;
+      return {
+        status: 'PARTIAL_SUCCESS',
+        evidence: r.evidence,
+        reason:
+          'Boot playtest only (900 frames from the main scene): no gamedev-mcp-server is configured (MODULEX_SERVER), so the scripted QA scenarios did not run.',
+      };
+    }
+    const report = await qa.suite(c);
+    const evidence = [
+      `static tier: ${report.static.build.length} build error(s), ${report.static.scenes.filter((s) => s.ok).length}/${report.static.scenes.length} scenes ok`,
+      ...(report.playtest ?? []).map(
+        (s) =>
+          `scenario ${s.id}: ${s.status} (${s.steps.filter((x) => x.status === 'passed').length}/${s.steps.length} steps)`,
+      ),
+      ...report.failures.map(
+        (f) => `${f.class} ${f.fingerprint} ${f.file ?? ''}:${f.line ?? ''} — ${f.message.slice(0, 160)}`,
+      ),
+    ];
+    if (!report.playtest)
+      return { status: 'FAILED', evidence, reason: 'the scripted playtest did not run (no playtest session)' };
+    if (!report.failures.length) return { status: 'SUCCESS', evidence };
+    this.pendingFailures.set(c.project.project_id, report.failures);
     return {
       status: 'PARTIAL_SUCCESS',
-      evidence: r.evidence,
-      reason:
-        'Boot playtest only (900 frames from the main scene); scripted-input playtests via the QA runtime are not wired yet.',
+      evidence,
+      reason: `${report.failures.length} QA failure(s) found; handed to bug_fixes (fix loop)`,
     };
   }
 
   private async bugFixes(c: StageContext): Promise<StageOutcome> {
+    const qa = this.o.qa;
+    const playtest = c.run.stages.find((s) => s.stage === 'playtest');
+    const pending = this.pendingFailures.get(c.project.project_id);
+    // The playtest found failures (in this process, or before a restart: its reason says so) → run the fix loop.
+    if (qa && (pending?.length || /QA failure\(s\) found/.test(playtest?.reason ?? ''))) {
+      const r = await qa.fix(c, pending);
+      this.pendingFailures.delete(c.project.project_id);
+      const evidence = [
+        ...r.attempts.map((a) => `fix ${a.class} #${a.attempt} (${a.checkpoint}): ${a.outcome} — ${a.proposal}`),
+        r.summary,
+      ];
+      if (r.status === 'SUCCESS') return { status: 'SUCCESS', evidence };
+      return { status: 'BLOCKED', evidence, reason: r.summary };
+    }
     const failed = c.run.stages.filter((s) => s.status === 'FAILED');
     if (!failed.length) return { status: 'SUCCESS', evidence: ['no failures recorded in this run; nothing to fix'] };
     return {
       status: 'NEEDS_HUMAN',
       evidence: failed.map((s) => `${s.stage}: ${s.reason ?? 'failed'}`),
-      reason: 'The automatic fix loop is not wired in this Studio build yet.',
+      reason: 'The automatic fix loop needs the QA tier (MODULEX_SERVER) to verify a fix.',
     };
   }
 
@@ -463,21 +527,78 @@ export interface PipelineHostConfig {
   addonsSource: string;
   dotnet?: string;
   androidSdk?: string | null;
+  /** gamedev-mcp-server binary for the playtest server (MODULEX_SERVER); unset → boot-only playtest. */
+  serverBinary?: string | null;
+  /** Run the playtest game windowed (screenshots need a GPU/display). Default true. */
+  windowed?: boolean;
   env?: NodeJS.ProcessEnv;
   db?: StudioDb | null;
+}
+
+/** The real QA tier: QaRunner (static + playtest) per project, the fix loop with the generator-restore fixer. */
+export function createQaTier(
+  host: PipelineHostConfig & { serverBinary: string },
+  deps: { audit?: AuditLog | null; redactor?: Redactor },
+): QaTier {
+  const redactor = deps.redactor ?? new Redactor();
+  const audit = deps.audit ?? new AuditLog(redactor);
+  const runnerFor = (c: StageContext): { runner: QaRunner; dir: string } => {
+    const dir = c.projectDir;
+    if (!dir) throw new Error('playtest: the project has not been created yet');
+    if (!loadScenarios(dir).length) writeScenarios(dir, defaultScenarios(c.spec, c.generated));
+    const runner = new QaRunner({
+      projectId: c.project.project_id,
+      projectDir: dir,
+      godot: host.godot,
+      solution: join(dir, `${c.generated.assembly}.sln`),
+      dotnet: host.dotnet,
+      env: host.env,
+      db: host.db,
+      playtest: () =>
+        new PlaytestSession({
+          godot: host.godot,
+          serverBinary: host.serverBinary,
+          projectDir: dir,
+          audit,
+          redactor,
+          db: host.db,
+          windowed: host.windowed ?? true,
+        }),
+    });
+    return { runner, dir };
+  };
+  return {
+    async suite(c) {
+      const { runner } = runnerFor(c);
+      await runner.runSuite();
+      return runner.lastReport!;
+    },
+    async fix(c, initial) {
+      const { runner, dir } = runnerFor(c);
+      return new FixLoop({
+        projectId: c.project.project_id,
+        checkpoints: new ProjectCheckpoints(dir, c.project.project_id, host.db),
+        fixer: new GeneratorRestoreFixer(dir, c.generated),
+        runSuite: () => runner.runSuite(),
+        db: host.db,
+      }).run(initial);
+    },
+  };
 }
 
 /** Wire the real services (ProjectFactory, headless scene runs, BuildService) into an engine. */
 export function createPipelineEngine(
   host: PipelineHostConfig,
-  deps: { store: StudioStore; audit?: AuditLog | null },
+  deps: { store: StudioStore; audit?: AuditLog | null; redactor?: Redactor },
 ): PipelineEngine {
   const env = host.env;
+  const serverBinary = host.serverBinary;
   return new PipelineEngine({
     store: deps.store,
     audit: deps.audit,
     factory: new ProjectFactory({ ...host }),
     builds: new BuildService({ godot: host.godot, db: host.db, env, androidSdk: host.androidSdk }),
     runScene: (dir, scene, frames) => runScene(host.godot, dir, scene, frames, { ...process.env, ...env }),
+    qa: serverBinary ? createQaTier({ ...host, serverBinary }, deps) : null,
   });
 }

@@ -154,6 +154,9 @@ jobs:
           $t = Start-Process $app.FullName -ArgumentList '--selftest', $report -Wait -PassThru
           Get-Content $report
           if ($t.ExitCode -ne 0) { throw "self-test failed (exit $($t.ExitCode))" }
+          # The small installer bundles no engine: Core must honestly report the pipeline as unavailable.
+          $h = (Get-Content $report -Raw | ConvertFrom-Json).health_body
+          if ($h.pipeline.available -ne $false) { throw "small installer: pipeline.available should be false (no Godot bundled)" }
           Copy-Item $report modulex-selftest.json
           $uninstaller = Get-ChildItem $app.DirectoryName -Filter 'uninstall*.exe' | Select-Object -First 1
           if ($uninstaller) {
@@ -201,6 +204,37 @@ jobs:
           "Full installer: $([math]::Round($size / 1MB, 1)) MB"
           if ($size -lt 100MB) { throw "full installer is unexpectedly small ($size bytes): the engine was not bundled" }
 
+      - name: Full installer — silent install, self-test (pipeline available), silent uninstall
+        run: |
+          $setup = "studio/app/src-tauri/target/release/bundle/nsis/ModuleXGameStudioFullSetup.exe"
+          $p = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "full installer exit code $($p.ExitCode)" }
+          $app = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter 'ModuleX Game Studio.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $app) { throw "installed app not found under LOCALAPPDATA" }
+          "Installed at: $($app.DirectoryName)"
+          $godot = Get-ChildItem $app.DirectoryName -Recurse -Filter 'Godot_v4.5.1-stable_mono_win64.exe' | Select-Object -First 1
+          $server = Get-ChildItem $app.DirectoryName -Recurse -Filter 'gamedev-mcp-server.exe' | Select-Object -First 1
+          if (-not $godot) { throw "bundled Godot 4.5.1 .NET not installed" }
+          if (-not $server) { throw "bundled gamedev-mcp-server not installed" }
+          "Godot:  $($godot.FullName)"
+          "Server: $($server.FullName)"
+          $report = Join-Path $env:RUNNER_TEMP 'modulex-selftest-full.json'
+          $t = Start-Process $app.FullName -ArgumentList '--selftest', $report -Wait -PassThru
+          Get-Content $report
+          if ($t.ExitCode -ne 0) { throw "full self-test failed (exit $($t.ExitCode))" }
+          $h = (Get-Content $report -Raw | ConvertFrom-Json).health_body
+          # MODULEX_GODOT + MODULEX_ADDONS_SOURCE + MODULEX_PROJECTS_ROOT resolved → the pipeline executes;
+          # MODULEX_SERVER resolved → the scripted QA tier is wired.
+          if ($h.pipeline.available -ne $true) { throw "full installer: Core reports the pipeline as unavailable (MODULEX_GODOT not resolved)" }
+          if ($h.pipeline.qaTier -ne $true) { throw "full installer: Core reports no QA tier (MODULEX_SERVER not resolved)" }
+          "pipeline.available=$($h.pipeline.available) pipeline.qaTier=$($h.pipeline.qaTier)"
+          Copy-Item $report modulex-selftest-full.json
+          $uninstaller = Get-ChildItem $app.DirectoryName -Filter 'uninstall*.exe' | Select-Object -First 1
+          if ($uninstaller) {
+            $u = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+            "uninstaller exit code: $($u.ExitCode)"
+          }
+
       - name: Upload the full installer
         uses: actions/upload-artifact@v6
         with:
@@ -218,5 +252,6 @@ jobs:
           path: |
             studio/app/src-tauri/target/release/bundle/nsis/ModuleXGameStudioSetup.exe
             modulex-selftest.json
+            modulex-selftest-full.json
           if-no-files-found: warn
           retention-days: 7
