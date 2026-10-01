@@ -361,10 +361,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p rel
-          cp dl/modulex-studio-windows-full/ModuleXGameStudioFullSetup.exe rel/
-          cp dl/modulex-studio-windows/ModuleXGameStudioSetup.exe rel/
-          (cd dl/modulex-installed-e2e/game-windows-release && zip -qr ../../../rel/SpaceKidJourney-sample-game-windows.zip .)
-          cp dl/modulex-installed-e2e/installed-e2e.json rel/installed-e2e-report.json
+          # Multi-path artifacts keep their folders (the small installer sits under studio/app/...), so locate by name.
+          one() { f="$(find "$1" -name "$2" -print -quit)"; [ -n "$f" ] || { echo "::error::$2 not found in $1"; exit 1; }; echo "$f"; }
+          cp "$(one dl/modulex-studio-windows-full ModuleXGameStudioFullSetup.exe)" rel/
+          cp "$(one dl/modulex-studio-windows ModuleXGameStudioSetup.exe)" rel/
+          game="$(find dl/modulex-installed-e2e -type d -name game-windows-release -print -quit)"
+          [ -n "$game" ] || { echo "::error::the game made by the installed app is missing"; exit 1; }
+          (cd "$game" && zip -qr "$GITHUB_WORKSPACE/rel/SpaceKidJourney-sample-game-windows.zip" .)
+          cp "$(one dl/modulex-installed-e2e installed-e2e.json)" rel/installed-e2e-report.json
           (cd rel && sha256sum * > SHA256SUMS.txt)
           ls -l rel
           cat rel/SHA256SUMS.txt

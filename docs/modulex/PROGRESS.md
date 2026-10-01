@@ -39,6 +39,31 @@ The Windows licence test needed three attempts. The cause was the job's `CARGO_T
 `cargo tree`'s "(*)" marker in ANSI codes. The minisign fixtures are now pinned `-text`, because a CRLF checkout
 changed the signed bytes.
 
+**Installed-app acceptance (the question "does the app a user installs make a game?"): green.** Run
+[36897379884](https://github.com/modulix0025-dev/Godot-MCP/actions/runs/36897379884), commit `c287486`, clean
+`windows-latest`, `studio/scripts/installed-e2e.mjs` against the silently installed full installer (system .NET hidden):
+
+```
+installed app: C:\Users\runneradmin\AppData\Local\ModuleX Game Studio
+health: pipeline.available=true qaTier=true
+Setup Assistant plan for Windows: export-templates, dotnet-sdk, git
+  export-templates: installed 4.5.1.stable.mono sha512:5f4379634ca1cfc1… (downloaded)
+  dotnet-sdk: installed 8.0.425 sha512:f0b6f15bf6f1a050… (downloaded)
+  git: installed git version 2.55.0.windows.5 (detected)
+Claude Desktop sees 18 studio_* tools, no raw Godot tools
+studio_game_create("رحلة طفل في الفضاء") accepted
+stages user_request … project_creation, asset_generation, scene_construction, gameplay, qa, playtest, bug_fixes,
+       regression, build: SUCCESS
+stage visual_inspection: PARTIAL_SUCCESS — tier not wired yet
+stage optimization: PARTIAL_SUCCESS — no performance measurement tier yet
+stage export: PARTIAL_SUCCESS — android BLOCKED (no SDK); ios PREPARED (macOS build worker required)
+build windows QA: BUILT sha256 ec7518a28cff2213… 94643712
+build windows RELEASE: BUILT sha256 3f1ecc1545cebe71… 96823808 smoke=true
+installed app → Setup Assistant → Claude Desktop → playable Windows game: exercised
+uninstaller exit code: 0
+games kept after uninstall: space-kid-journey
+```
+
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
 ---
