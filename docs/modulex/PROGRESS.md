@@ -23,8 +23,9 @@ All work up to Phase 8 is on branch `claude/practical-hawking-whz0fm`. Work from
 | 9 · QA runner + fix loop | **Done** (D-047, D-049, D-050) | GATE 9 live: clean game 10/10 scenarios; 2 injected bugs detected, fixed, regression green; an unfixable bug ends BLOCKED |
 | 11 · Remote build workers | **Done against a mock runner** (D-051). Pairing from the UI is BLOCKED until the credential store bridge exists (D-052). Live Mac: BLOCKED (no Mac). | GATE 11 mock suite 10/10 (stable 5×); the live macOS test reports BLOCKED |
 | 12 · Resumability, completion predicate, cost | **Done** (D-053) | GATE 12: kill at scene 17/30 → resumes at 17; kill mid-generation → 1 ComfyUI job; kill mid-build → 1 worker job; predicate tested over all 131,072 missing-evidence combinations |
-| 13 · Desktop app, Setup Assistant, installer, updates | **In progress.** Setup Assistant done (D-055); the installers exist. Production UI, credential store bridge, updater and code signing are open. | Setup Assistant: 7 mirror tests; live official sources (Godot + server on Linux; Windows CI adds .NET + Git) |
-| 14–15 | Not started. | — |
+| 13 · Desktop app, Setup Assistant, installer, updates | **Mostly done.** Production UI (D-060), Setup Assistant (D-055), credential store bridge (D-056), code signing when the certificate exists (D-057), updater verification (D-058). Open: the updater restart handoff and the signing key (owner), shortcut/WebDriver install test, upgrade test. | Windows CI: both installers installed silently and self-tested; full installer `pipeline.available=true`, `qaTier=true`; `vault_ok=true` (a real Credential Manager round-trip) |
+| 14 · Self-test, docs, licences | **Licences done** (D-059). The self-test runs in CI. User documentation is open. | `licenses.test.ts`: the inventory matches the real bundle; no disallowed licence ships |
+| 15 | Not started. | — |
 
 Phases 0–2 were built in the order 0 → 2 → 1, because Spike 3b needs the QA autoload (D-018).
 
@@ -451,6 +452,48 @@ shared/tests/completion.test.ts
 ✓ a second platform done while the first is incomplete is PARTIAL_SUCCESS, never SUCCESS
 ✓ an owner decision pending is NEEDS_HUMAN even with every row proven
 ```
+
+## Phase 13: desktop app, Setup Assistant, installers, credential store, signing, updater
+
+**Installers, live on `windows-latest`** (run 36884167845, commit `844ba56`, job "studio tests + Tauri NSIS
+installer (windows)": green):
+
+```
+ModuleXGameStudioSetup.exe      silent install → --selftest ok, health 200, vault_ok=true
+                                vault steps: store ✓ · read back ✓ · delete ✓ · gone ✓   (Windows Credential Manager)
+                                pipeline.available=false (no engine bundled: reported honestly) → uninstall exit 0
+ModuleXGameStudioFullSetup.exe  135.3 MB (engine payload 319.5 MB before compression)
+                                installed: …\ModuleX Game Studio\engine\godot\Godot_v4.5.1-stable_mono_win64.exe
+                                           …\ModuleX Game Studio\engine\server\gamedev-mcp-server.exe
+                                --selftest: pipeline.available=True pipeline.qaTier=True vault_ok=true → uninstall exit 0
+```
+
+**What was built.**
+
+- **Setup Assistant (D-055).** Official sources with fail-closed checksums, resumable downloads, atomic
+  extraction, and a licence gate for the Android SDK. Live on Linux: Godot (sha512) and the server (sha256)
+  installed, and `godot --version` ran from the installed copy.
+  - On Windows CI the live step found a real bug: Git's GNU `tar` earlier on PATH read `C:\…` as a remote host.
+    Extraction now uses `%SystemRoot%\System32\tar.exe`.
+- **Credential store bridge (D-056).** Build worker pairing works in the app, and the token lives only in
+  Credential Manager.
+- **Production UI (D-060).** Live screens on the approved design system, with Core CORS restricted to the UI's
+  origins.
+- **Authenticode signing (D-057).** It runs only with the owner's certificate secret. Until then the build is
+  unsigned, and CI says so.
+- **Updater verification (D-058).** minisign by the built-in key, fail-closed. The key pair, the feed and the
+  restart handoff need the owner.
+
+## Phase 14: licences
+
+`docs/modulex/THIRD_PARTY_LICENSES.md` is generated from the esbuild metafile, the lockfile, `cargo tree`, the
+NuGet pins, the runtimes and the workflow licence facts (D-059):
+
+- shipped: 21 npm packages in Core, 6 in the UI, 229 Rust crates;
+- listed but not yet bundled: 104 packages that Core declares;
+- 2 model licence facts.
+
+The installers ship the licence texts, and CI checks that they are installed.
 
 ## Gate output (fresh run, 2026-09-29, after Execution Patch 2)
 

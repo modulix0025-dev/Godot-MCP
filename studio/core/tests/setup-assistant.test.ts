@@ -15,6 +15,7 @@ import {
   ANDROID_PACKAGES,
   cmdlineToolsArchive,
   SetupAssistant,
+  windowsTar,
   type SetupAssistantOptions,
 } from '../src/setup/assistant.js';
 
@@ -226,6 +227,11 @@ describe('Setup Assistant', () => {
     expect((await a.install('android-build-template')).status).toBe('failed'); // needs the export templates first
     await a.install('export-templates');
     expect((await a.install('android-build-template')).status).toBe('installed');
+  });
+
+  it("uses Windows' own bsdtar by full path, never a tar earlier on PATH (Git's GNU tar)", () => {
+    expect(windowsTar({ SystemRoot: 'C:\\Windows' })).toBe('C:\\Windows\\System32\\tar.exe');
+    expect(windowsTar({ windir: 'D:\\WIN' })).toBe('D:\\WIN\\System32\\tar.exe');
   });
 
   it('parses the cmdline-tools archive per host from the repository manifest', () => {

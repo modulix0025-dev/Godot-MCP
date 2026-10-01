@@ -17,7 +17,7 @@
 //   - Everything installs per user under the data directory; nothing needs admin rights.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { componentsNeeded, SETUP_COMPONENTS, type ComponentId, type Platform } from '@modulex/shared';
 import { download, godotDownloads, parseChecksums, type DownloadProgress, type DownloadSpec } from './downloader.js';
@@ -91,12 +91,19 @@ function hostOs(): HostOs {
   return process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
 }
 
+/**
+ * Windows' own bsdtar (it reads zip and tar.gz), by full path: a `tar` earlier on PATH — Git for Windows' GNU tar —
+ * parses "C:\…" as a remote host and fails ("Cannot connect to C: resolve failed", seen on windows-latest).
+ */
+export function windowsTar(env: NodeJS.ProcessEnv = process.env): string {
+  return win32.join(env.SystemRoot ?? env.windir ?? 'C:\\Windows', 'System32', 'tar.exe');
+}
+
 async function defaultExtract(archive: string, dest: string): Promise<void> {
   mkdirSync(dest, { recursive: true });
   const lower = archive.toLowerCase();
-  if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) await run('tar', ['-xzf', archive, '-C', dest]);
-  else if (process.platform === 'win32')
-    await run('tar', ['-xf', archive, '-C', dest]); // bsdtar reads zip
+  if (process.platform === 'win32') await run(windowsTar(), ['-xf', archive, '-C', dest]);
+  else if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) await run('tar', ['-xzf', archive, '-C', dest]);
   else await run('unzip', ['-q', '-o', archive, '-d', dest]);
 }
 
