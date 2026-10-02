@@ -1190,7 +1190,16 @@ screens, plus light and Arabic RTL).
 3. **The self-test did not run the GUI's configuration.** It started Core without the data directory and the
    stored credentials, so a GUI-only failure could pass CI.
 
-The startup failure on that PC itself is not reproduced. Linux runs of the bundle with the GUI's exact
+**The root cause, found from the owner's `core.log`.** The log said `Error: EISDIR: illegal operation on a directory,
+lstat 'C:'` from Node's `resolveMainPath`. Tauri canonicalizes its own executable path, so on Windows
+`resource_dir()` is a verbatim path (`\\?\C:\Users\…\core\modulex-core.mjs`), and Node cannot start an entry
+script given that way. The self-test and the installed-app test built the path from `current_exe()` without
+canonicalizing it, so they never saw the `\\?\` form. The fix is `plain_path()`: every path handed to Core (the
+script, the resources, the data dir, home) is ordinary (`C:\…`, or `\\server\share\…` for UNC). The self-test now
+resolves its resources from a canonicalized exe path, as Tauri does, so Windows CI exercises the verbatim form. A
+unit test covers the conversion.
+
+Before that log arrived, the failure was not reproduced. Linux runs of the bundle with the GUI's exact
 environment hand off in 0.25 s: first run, no data folder yet, and stored tokens. The changes below make the next
 occurrence show its cause.
 

@@ -105,10 +105,7 @@ fn claude_desktop_pairing_token(state: State<'_, CoreState>) -> Result<String, S
 /// open it with Claude Desktop (which shows its own install dialog).
 #[tauri::command]
 fn reveal_claude_extension(app: tauri::AppHandle) -> Result<String, String> {
-    let file = app
-        .path()
-        .resource_dir()
-        .map_err(|e| e.to_string())?
+    let file = plain_path(&app.path().resource_dir().map_err(|e| e.to_string())?)
         .join("claude-desktop")
         .join("modulex-game-studio.mcpb");
     if !file.is_file() {
@@ -193,19 +190,21 @@ fn start_core(app: &tauri::AppHandle) {
         // Dropping a previous Sidecar (a "Retry" after Ready is not offered, but be safe) kills that Core first.
         *g = CoreStatus::Starting(Instant::now());
     }
-    let script = app
-        .path()
-        .resource_dir()
-        .map(|d| d.join("core").join("modulex-core.mjs"));
-    let resources = app.path().resource_dir().ok();
-    let data_dir = app.path().app_local_data_dir().ok();
-    let home = app.path().home_dir().ok();
+    // Tauri canonicalizes its own path, so on Windows resource_dir() is `\\?\C:\...`; Node cannot start a script
+    // given that way (EISDIR on lstat 'C:'), and Godot/dotnet mishandle it too. Hand every path over plain.
+    let resources = app.path().resource_dir().ok().map(|d| plain_path(&d));
+    let script = resources
+        .as_ref()
+        .map(|d| d.join("core").join("modulex-core.mjs"))
+        .ok_or("resource folder unavailable");
+    let data_dir = app.path().app_local_data_dir().ok().map(|d| plain_path(&d));
+    let home = app.path().home_dir().ok().map(|d| plain_path(&d));
     let log = data_dir.as_deref().map(core_log_path);
     *state.log.lock().unwrap() = log.clone();
     let app = app.clone();
     std::thread::spawn(move || {
         let result = (|| {
-            let script = script.map_err(|e| format!("resource folder unavailable: {e}"))?;
+            let script = script?;
             let resources = resources.ok_or("resource folder unavailable")?;
             let node = sidecar::node_path(&exe_dir());
             let env = core_environment(&resources, home, data_dir.as_deref());
@@ -255,10 +254,35 @@ fn start_core(app: &tauri::AppHandle) {
     });
 }
 
+/// A Windows verbatim path (`\\?\C:\x`, `\\?\UNC\server\share\x`) as an ordinary one (`C:\x`,
+/// `\\server\share\x`). Other paths are returned unchanged.
+fn plain_path(p: &std::path::Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    p.to_path_buf()
+}
+
+/// The bundled Core script for a resource folder, as handed to Node (plain path).
+fn core_script_in(resources: &std::path::Path) -> PathBuf {
+    let res = plain_path(resources);
+    [
+        res.join("core").join("modulex-core.mjs"),
+        res.join("resources").join("core").join("modulex-core.mjs"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())
+    .unwrap_or_else(|| res.join("core").join("modulex-core.mjs"))
+}
+
 fn exe_dir() -> PathBuf {
     std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .and_then(|p| p.parent().map(plain_path))
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -315,7 +339,7 @@ fn self_test(core_script: PathBuf, out: PathBuf, started: Instant) -> i32 {
         .unwrap_or_else(exe_dir);
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from);
+        .map(|h| plain_path(std::path::Path::new(&h)));
     // Exactly the GUI's environment (core_environment), including the data directory and stored credentials, and
     // the same log file, so a GUI-only startup failure cannot pass the self-test.
     let data_dir = std::env::var_os("LOCALAPPDATA")
@@ -380,17 +404,10 @@ pub fn run() {
             .get(i + 1)
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("modulex-selftest.json"));
-        // Resources sit beside the exe in a Windows install (`resources/` folder layout differs per OS).
-        let script = [
-            exe_dir().join("core").join("modulex-core.mjs"),
-            exe_dir()
-                .join("resources")
-                .join("core")
-                .join("modulex-core.mjs"),
-        ]
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| exe_dir().join("core").join("modulex-core.mjs"));
+        // Resolve the resource folder the way Tauri does for the GUI: a canonicalized exe path, which on Windows is a
+        // `\\?\` verbatim path. The self-test then proves that this form reaches Node as a plain path.
+        let canonical = std::fs::canonicalize(exe_dir()).unwrap_or_else(|_| exe_dir());
+        let script = core_script_in(&canonical);
         std::process::exit(self_test(script, out, started));
     }
 
@@ -426,4 +443,32 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running ModuleX Game Studio");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plain_path;
+    use std::path::Path;
+
+    #[test]
+    fn verbatim_windows_paths_become_plain() {
+        assert_eq!(
+            plain_path(Path::new(
+                r"\\?\C:\Users\Myfam\AppData\Local\ModuleX Game Studio\core\modulex-core.mjs"
+            )),
+            Path::new(r"C:\Users\Myfam\AppData\Local\ModuleX Game Studio\core\modulex-core.mjs")
+        );
+        assert_eq!(
+            plain_path(Path::new(r"\\?\UNC\server\share\studio")),
+            Path::new(r"\\server\share\studio")
+        );
+        assert_eq!(
+            plain_path(Path::new(r"C:\already\plain")),
+            Path::new(r"C:\already\plain")
+        );
+        assert_eq!(
+            plain_path(Path::new("/opt/modulex")),
+            Path::new("/opt/modulex")
+        );
+    }
 }
